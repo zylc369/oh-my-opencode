@@ -7,19 +7,19 @@ import {
 } from "./model-requirements"
 
 describe("AGENT_MODEL_REQUIREMENTS", () => {
-  test("oracle has valid fallbackChain with gpt-5.2 as primary", () => {
+  test("oracle has valid fallbackChain with gpt-5.4 as primary", () => {
     // given - oracle agent requirement
     const oracle = AGENT_MODEL_REQUIREMENTS["oracle"]
 
     // when - accessing oracle requirement
-    // then - fallbackChain exists with gpt-5.2 as first entry
+    // then - fallbackChain exists with gpt-5.4 as first entry
     expect(oracle).toBeDefined()
     expect(oracle.fallbackChain).toBeArray()
     expect(oracle.fallbackChain.length).toBeGreaterThan(0)
 
     const primary = oracle.fallbackChain[0]
     expect(primary.providers).toContain("openai")
-    expect(primary.model).toBe("gpt-5.2")
+    expect(primary.model).toBe("gpt-5.4")
     expect(primary.variant).toBe("high")
   })
 
@@ -145,19 +145,19 @@ describe("AGENT_MODEL_REQUIREMENTS", () => {
     expect(primary.variant).toBe("max")
   })
 
-  test("momus has valid fallbackChain with gpt-5.2 as primary", () => {
+  test("momus has valid fallbackChain with gpt-5.4 as primary", () => {
     // given - momus agent requirement
     const momus = AGENT_MODEL_REQUIREMENTS["momus"]
 
     // when - accessing Momus requirement
-    // then - fallbackChain exists with gpt-5.2 as first entry, variant medium
+    // then - fallbackChain exists with gpt-5.4 as first entry, variant xhigh
     expect(momus).toBeDefined()
     expect(momus.fallbackChain).toBeArray()
     expect(momus.fallbackChain.length).toBeGreaterThan(0)
 
     const primary = momus.fallbackChain[0]
-    expect(primary.model).toBe("gpt-5.2")
-    expect(primary.variant).toBe("medium")
+    expect(primary.model).toBe("gpt-5.4")
+    expect(primary.variant).toBe("xhigh")
     expect(primary.providers[0]).toBe("openai")
   })
 
@@ -174,6 +174,10 @@ describe("AGENT_MODEL_REQUIREMENTS", () => {
     const primary = atlas.fallbackChain[0]
     expect(primary.model).toBe("claude-sonnet-4-6")
     expect(primary.providers[0]).toBe("anthropic")
+
+    const secondary = atlas.fallbackChain[1]
+    expect(secondary.model).toBe("gpt-5.4")
+    expect(secondary.variant).toBe("medium")
   })
 
   test("hephaestus supports openai, github-copilot, venice, and opencode providers", () => {
@@ -311,20 +315,20 @@ describe("CATEGORY_MODEL_REQUIREMENTS", () => {
     expect(primary.providers[0]).toBe("anthropic")
   })
 
-  test("unspecified-high has claude-opus-4-6 as primary", () => {
+  test("unspecified-high has gpt-5.4 as primary", () => {
     // #given - unspecified-high category requirement
     const unspecifiedHigh = CATEGORY_MODEL_REQUIREMENTS["unspecified-high"]
 
     // #when - accessing unspecified-high requirement
-    // #then - claude-opus-4-6 is first
+    // #then - gpt-5.4 is first
     expect(unspecifiedHigh).toBeDefined()
     expect(unspecifiedHigh.fallbackChain).toBeArray()
     expect(unspecifiedHigh.fallbackChain.length).toBeGreaterThan(1)
 
     const primary = unspecifiedHigh.fallbackChain[0]
-    expect(primary.model).toBe("claude-opus-4-6")
-    expect(primary.variant).toBe("max")
-    expect(primary.providers).toEqual(["anthropic", "github-copilot", "opencode"])
+    expect(primary.model).toBe("gpt-5.4")
+    expect(primary.variant).toBe("high")
+    expect(primary.providers).toEqual(["openai", "github-copilot", "opencode"])
   })
 
   test("artistry has valid fallbackChain with gemini-3.1-pro as primary", () => {
@@ -431,7 +435,7 @@ describe("ModelRequirement type", () => {
     const requirement: ModelRequirement = {
       fallbackChain: [
         { providers: ["anthropic", "github-copilot"], model: "claude-opus-4-6", variant: "max" },
-        { providers: ["openai", "github-copilot"], model: "gpt-5.2", variant: "high" },
+        { providers: ["openai", "github-copilot"], model: "gpt-5.4", variant: "high" },
       ],
     }
 
@@ -440,7 +444,7 @@ describe("ModelRequirement type", () => {
     expect(requirement.fallbackChain).toBeArray()
     expect(requirement.fallbackChain).toHaveLength(2)
     expect(requirement.fallbackChain[0].model).toBe("claude-opus-4-6")
-    expect(requirement.fallbackChain[1].model).toBe("gpt-5.2")
+    expect(requirement.fallbackChain[1].model).toBe("gpt-5.4")
   })
 
   test("ModelRequirement variant is optional", () => {
