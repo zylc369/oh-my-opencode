@@ -224,19 +224,32 @@ Present a structured recommendation:
 
 ### Agent Optimizations
 
-| Agent | Current | Recommended | Reason |
-|-------|---------|-------------|--------|
-| sisyphus | claude-opus-4-6 | kimi-k2.5 | Cost savings with similar performance |
-| explore | claude-opus-4-6 | grok-code-fast-1 | 10x faster, 100x cheaper for grep tasks |
-| oracle | gpt-4-turbo | gpt-5.4 | Better reasoning for architecture consultation |
+| Agent | Current Model | Current Variant | Recommended Model | Recommended Variant | Reason |
+|-------|----------------|-----------------|-------------------|---------------------|--------|
+| sisyphus | claude-opus-4-6 | max | kimi-k2.5 | high | Cost savings with similar performance |
+| sisyphus.ultrawork | (none) | (none) | claude-opus-4-6 | max | Add ultrawork override for critical tasks |
+| explore | claude-opus-4-6 | high | grok-code-fast-1 | low | 10x faster, 100x cheaper for grep tasks |
+| oracle | gpt-4-turbo | medium | gpt-5.4 | high | Better reasoning for architecture consultation |
+| momus | gpt-5.4 | medium | gpt-5.4 | xhigh | Upgrade variant for thorough verification |
+
+**Variant Changes Summary:**
+- ✓ Upgraded: oracle (medium → high), momus (medium → xhigh)
+- ✓ Downgraded: explore (high → low) for cost savings
+- ✓ Added: sisyphus ultrawork override (max variant)
 
 ### Category Optimizations
 
-| Category | Current | Recommended | Reason |
-|----------|---------|-------------|--------|
-| quick | (default) | gpt-5-nano | Ultra-cheap for trivial tasks |
-| visual-engineering | claude-opus-4-6 | gemini-3.1-pro | Gemini excels at visual tasks |
+| Category | Current Model | Current Variant | Recommended Model | Recommended Variant | Reason |
+|----------|---------------|-----------------|-------------------|---------------------|--------|
+| quick | (default) | (default) | gpt-5-nano | low | Ultra-cheap for trivial tasks |
+| visual-engineering | claude-opus-4-6 | max | gemini-3.1-pro | high | Gemini excels at visual tasks |
+| ultrabrain | gpt-5.3-codex | high | gpt-5.3-codex | xhigh | Upgrade for maximum reasoning |
+| unspecified-low | claude-sonnet-4.6 | high | claude-sonnet-4.6 | medium | Downgrade for standard work |
 
+**Variant Changes Summary:**
+- ✓ Upgraded: ultrabrain (high → xhigh)
+- ✓ Downgraded: unspecified-low (high → medium) for cost savings
+- ✓ Optimized: visual-engineering (max → high) balanced quality/cost
 ### Cost Impact
 
 - Estimated cost change: -XX% (savings from cheaper models)
