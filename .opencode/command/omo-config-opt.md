@@ -1,5 +1,5 @@
 ---
-description: Optimize oh-my-opencode configuration for better model-agent matching and cost efficiency
+description: Optimize oh-my-opencode configuration to help AI better complete user tasks through better model-agent matching and cost efficiency
 ---
 
 <command-instruction>
@@ -9,11 +9,27 @@ Configuration optimization via analysis of model availability, agent requirement
 <rules>
 - **User's models are law.** Only recommend models the user has access to.
 - **No adding/removing agents/categories.** Only optimize existing `agents` and `categories` fields.
+- **Preserve key order.** Do not change the order of agents and categories when updating configuration.
 - **Cost matters.** Balance performance with cost efficiency.
 - **Model-agent matching matters.** Follow the agent-model matching guide.
 </rules>
 
 <optimization-principles>
+
+
+### Primary Goal
+
+**The ultimate goal of all optimization is to help AI better accomplish the user's task.**
+
+Configuration optimization is not about saving money or using the "best" models — it's about:
+1. **Task Completion Quality** — AI delivers accurate, complete, helpful results
+2. **Response Relevance** — Model personality matches the task type
+3. **Cost Efficiency** — Don't waste resources on overkill models
+4. **Speed Where Appropriate** — Fast models for grep/search, smart models for reasoning
+
+Every optimization decision should answer: "Does this help AI better complete the user's task?"
+
+---
 
 ### Agent-Model Matching
 
@@ -249,21 +265,31 @@ if (fs.existsSync(configPath)) {
 Merge optimized settings into current configuration:
 
 ```typescript
-// Deep merge - preserve all existing settings
+// Preserve key order: extract keys in original order, update values only
+function preserveOrderMerge<T extends Record<string, unknown>>(
+  current: T,
+  updates: Partial<T>
+): T {
+  // Create result with same key order as current
+  const result: T = {} as T;
+  
+  // First, copy all existing keys in their original order
+  for (const key of Object.keys(current)) {
+    result[key] = updates[key] !== undefined ? updates[key] : current[key];
+  }
+  
+  return result;
+}
+
+// Deep merge - preserve all existing settings AND key order
 const optimizedConfig = {
   ...currentConfig,  // Keep all existing fields
   
-  // Update agents section (deep merge)
-  agents: {
-    ...currentConfig.agents,
-    ...recommendedAgents,  // Override with optimized settings
-  },
+  // Update agents section (preserve key order)
+  agents: preserveOrderMerge(currentConfig.agents || {}, recommendedAgents),
   
-  // Update categories section (deep merge)
-  categories: {
-    ...currentConfig.categories,
-    ...recommendedCategories,  // Override with optimized settings
-  },
+  // Update categories section (preserve key order)
+  categories: preserveOrderMerge(currentConfig.categories || {}, recommendedCategories),
 };
 ```
 
@@ -288,6 +314,7 @@ console.log(`✓ Configuration written to: ${outputPath}`);
 - Always write to `~/.config/opencode/oh-my-opencode.json` (not .jsonc)
 - Preserve all existing configuration fields (disabled_hooks, background_task, etc.)
 - Only update `agents` and `categories` sections
+- **Preserve the order of keys in `agents` and `categories`** - do not reorder existing entries
 - Maintain JSON formatting with proper indentation
 
 ### Step 4: Validate Configuration
