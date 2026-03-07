@@ -56,7 +56,65 @@ Categories map task types to models:
 | `unspecified-low` | Standard work | Claude Sonnet → GPT-5.3 Codex → Gemini Flash |
 | `writing` | Text/docs | Gemini Flash → Claude Sonnet |
 
-</optimization-principles>
+### Variant Optimization
+
+Variant controls model quality/intelligence level. Choose based on task criticality and cost:
+
+| Variant | Intelligence | Cost | When to Use |
+|---------|-------------|------|-------------|
+| `max` | Maximum | Highest | Critical orchestration (Sisyphus ultrawork), complex architecture |
+| `xhigh` | Extra High | Very High | Hard reasoning tasks, plan review (Momus), ultrabrain category |
+| `high` | High | High | Strategic tasks (Oracle, Prometheus), visual-engineering, deep coding |
+| `medium` | Medium | Medium | Standard tasks, unspecified-low, utility agents (Explore, Librarian) |
+| `low` | Low | Low | Simple tasks, quick category, doc search |
+
+**Variant Optimization Rules:**
+
+1. **Critical Agents → `max` or `xhigh`**
+   - Sisyphus (orchestrator): `max` for ultrawork, `high` for normal tasks
+   - Momus (ruthless reviewer): `xhigh` for thorough verification
+   - Oracle (architecture): `high` for consultation quality
+
+2. **Specialized Agents → `high` or `medium`**
+   - Prometheus (planner): `high` for strategic planning
+   - Hephaestus (deep worker): `medium` balances cost and capability
+   - Atlas (todo orchestrator): `medium` for efficient coordination
+
+3. **Utility Agents → `low` or `medium`**
+   - Explore (grep): `low` (speed > intelligence)
+   - Librarian (docs): `low` (retrieval doesn't need deep reasoning)
+   - Multimodal-Looker: `medium` (vision tasks need some intelligence)
+
+4. **Categories by Complexity:**
+   - `ultrabrain`: `xhigh` (maximum reasoning)
+   - `deep`, `artistry`, `visual-engineering`: `high` (quality matters)
+   - `unspecified-high`: `high` (complex work)
+   - `unspecified-low`: `medium` (standard work)
+   - `quick`, `writing`: `low` or `medium` (simple/fast tasks)
+
+5. **Cost-Performance Balance:**
+   - If budget is tight: downgrade `max` → `high`, `high` → `medium`
+   - If quality is critical: upgrade `medium` → `high`, `high` → `xhigh`
+   - **Never upgrade utility agents** (Explore, Librarian) — speed is their value
+
+**Special Case: Ultrawork Override**
+
+Sisyphus supports per-message ultrawork variant override:
+```jsonc
+{
+  "agents": {
+    "sisyphus": {
+      "model": "kimi-for-coding/k2p5",
+      "variant": "high",  // Normal tasks
+      "ultrawork": {
+        "model": "anthropic/claude-opus-4-6",
+        "variant": "max"  // Ultrawork mode: maximum intelligence
+      }
+    }
+  }
+}
+```
+
 
 ---
 
@@ -129,11 +187,24 @@ Analyze:
    - Verify fallback chains are reasonable
 
 3. **Identify optimization opportunities**
-   - Agents using suboptimal models for their type
-   - Categories with no user override (using defaults)
-   - Cost-saving opportunities (switching to cheaper models)
-   - Performance improvements (switching to better models)
+   - **Model issues:**
+     - Agents using suboptimal models for their type
+     - Categories with no user override (using defaults)
+     - Cost-saving opportunities (switching to cheaper models)
+     - Performance improvements (switching to better models)
+   
+   - **Variant issues:**
+     - Critical agents using `low` or `medium` (should be `high` or `max`)
+     - Utility agents using `high` or `max` (should be `low` or `medium`)
+     - Categories using inappropriate variants for their complexity
+     - Missing ultrawork override for Sisyphus (should have `max` variant)
+     - Cost optimization: downgrade variants where quality isn't critical
+     - Quality improvement: upgrade variants for critical tasks
 
+4. **Cross-reference with user's model access**
+   - Filter out recommendations requiring unavailable models
+   - Adjust fallback chains based on available providers
+   - Suggest free-tier alternatives when appropriate
 </config-analysis>
 
 ---
