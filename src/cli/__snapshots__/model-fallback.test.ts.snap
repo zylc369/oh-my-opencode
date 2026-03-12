@@ -2,7 +2,7 @@
 
 exports[`generateModelConfig no providers available returns ULTIMATE_FALLBACK for all agents and categories when no providers 1`] = `
 {
-  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/dev/assets/oh-my-opencode.schema.json",
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/oh-my-opencode.schema.json",
   "agents": {
     "atlas": {
       "model": "opencode/glm-4.7-free",
@@ -63,7 +63,7 @@ exports[`generateModelConfig no providers available returns ULTIMATE_FALLBACK fo
 
 exports[`generateModelConfig single native provider uses Claude models when only Claude is available 1`] = `
 {
-  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/dev/assets/oh-my-opencode.schema.json",
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/oh-my-opencode.schema.json",
   "agents": {
     "atlas": {
       "model": "anthropic/claude-sonnet-4-5",
@@ -125,7 +125,7 @@ exports[`generateModelConfig single native provider uses Claude models when only
 
 exports[`generateModelConfig single native provider uses Claude models with isMax20 flag 1`] = `
 {
-  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/dev/assets/oh-my-opencode.schema.json",
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/oh-my-opencode.schema.json",
   "agents": {
     "atlas": {
       "model": "anthropic/claude-sonnet-4-5",
@@ -188,21 +188,23 @@ exports[`generateModelConfig single native provider uses Claude models with isMa
 
 exports[`generateModelConfig single native provider uses OpenAI models when only OpenAI is available 1`] = `
 {
-  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/dev/assets/oh-my-opencode.schema.json",
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/oh-my-opencode.schema.json",
   "agents": {
     "atlas": {
       "model": "openai/gpt-5.4",
       "variant": "medium",
     },
     "explore": {
-      "model": "opencode/gpt-5-nano",
+      "model": "openai/gpt-5.4",
+      "variant": "medium",
     },
     "hephaestus": {
       "model": "openai/gpt-5.3-codex",
       "variant": "medium",
     },
     "librarian": {
-      "model": "opencode/glm-4.7-free",
+      "model": "openai/gpt-5.4",
+      "variant": "medium",
     },
     "metis": {
       "model": "openai/gpt-5.4",
@@ -213,7 +215,7 @@ exports[`generateModelConfig single native provider uses OpenAI models when only
       "variant": "xhigh",
     },
     "multimodal-looker": {
-      "model": "openai/gpt-5.3-codex",
+      "model": "openai/gpt-5.4",
       "variant": "medium",
     },
     "oracle": {
@@ -224,14 +226,23 @@ exports[`generateModelConfig single native provider uses OpenAI models when only
       "model": "openai/gpt-5.4",
       "variant": "high",
     },
+    "sisyphus": {
+      "model": "openai/gpt-5.4",
+      "variant": "medium",
+    },
   },
   "categories": {
+    "artistry": {
+      "model": "openai/gpt-5.4",
+      "variant": "xhigh",
+    },
     "deep": {
       "model": "openai/gpt-5.3-codex",
       "variant": "medium",
     },
     "quick": {
-      "model": "opencode/glm-4.7-free",
+      "model": "openai/gpt-5.3-codex",
+      "variant": "low",
     },
     "ultrabrain": {
       "model": "openai/gpt-5.3-codex",
@@ -246,10 +257,12 @@ exports[`generateModelConfig single native provider uses OpenAI models when only
       "variant": "medium",
     },
     "visual-engineering": {
-      "model": "opencode/glm-4.7-free",
+      "model": "openai/gpt-5.4",
+      "variant": "high",
     },
     "writing": {
-      "model": "opencode/glm-4.7-free",
+      "model": "openai/gpt-5.4",
+      "variant": "medium",
     },
   },
 }
@@ -257,21 +270,23 @@ exports[`generateModelConfig single native provider uses OpenAI models when only
 
 exports[`generateModelConfig single native provider uses OpenAI models with isMax20 flag 1`] = `
 {
-  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/dev/assets/oh-my-opencode.schema.json",
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/oh-my-opencode.schema.json",
   "agents": {
     "atlas": {
       "model": "openai/gpt-5.4",
       "variant": "medium",
     },
     "explore": {
-      "model": "opencode/gpt-5-nano",
+      "model": "openai/gpt-5.4",
+      "variant": "medium",
     },
     "hephaestus": {
       "model": "openai/gpt-5.3-codex",
       "variant": "medium",
     },
     "librarian": {
-      "model": "opencode/glm-4.7-free",
+      "model": "openai/gpt-5.4",
+      "variant": "medium",
     },
     "metis": {
       "model": "openai/gpt-5.4",
@@ -282,7 +297,7 @@ exports[`generateModelConfig single native provider uses OpenAI models with isMa
       "variant": "xhigh",
     },
     "multimodal-looker": {
-      "model": "openai/gpt-5.3-codex",
+      "model": "openai/gpt-5.4",
       "variant": "medium",
     },
     "oracle": {
@@ -293,14 +308,23 @@ exports[`generateModelConfig single native provider uses OpenAI models with isMa
       "model": "openai/gpt-5.4",
       "variant": "high",
     },
+    "sisyphus": {
+      "model": "openai/gpt-5.4",
+      "variant": "medium",
+    },
   },
   "categories": {
+    "artistry": {
+      "model": "openai/gpt-5.4",
+      "variant": "xhigh",
+    },
     "deep": {
       "model": "openai/gpt-5.3-codex",
       "variant": "medium",
     },
     "quick": {
-      "model": "opencode/glm-4.7-free",
+      "model": "openai/gpt-5.3-codex",
+      "variant": "low",
     },
     "ultrabrain": {
       "model": "openai/gpt-5.3-codex",
@@ -315,10 +339,12 @@ exports[`generateModelConfig single native provider uses OpenAI models with isMa
       "variant": "medium",
     },
     "visual-engineering": {
-      "model": "opencode/glm-4.7-free",
+      "model": "openai/gpt-5.4",
+      "variant": "high",
     },
     "writing": {
-      "model": "opencode/glm-4.7-free",
+      "model": "openai/gpt-5.4",
+      "variant": "medium",
     },
   },
 }
@@ -326,7 +352,7 @@ exports[`generateModelConfig single native provider uses OpenAI models with isMa
 
 exports[`generateModelConfig single native provider uses Gemini models when only Gemini is available 1`] = `
 {
-  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/dev/assets/oh-my-opencode.schema.json",
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/oh-my-opencode.schema.json",
   "agents": {
     "atlas": {
       "model": "google/gemini-3.1-pro-preview",
@@ -387,7 +413,7 @@ exports[`generateModelConfig single native provider uses Gemini models when only
 
 exports[`generateModelConfig single native provider uses Gemini models with isMax20 flag 1`] = `
 {
-  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/dev/assets/oh-my-opencode.schema.json",
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/oh-my-opencode.schema.json",
   "agents": {
     "atlas": {
       "model": "google/gemini-3.1-pro-preview",
@@ -448,7 +474,7 @@ exports[`generateModelConfig single native provider uses Gemini models with isMa
 
 exports[`generateModelConfig all native providers uses preferred models from fallback chains when all natives available 1`] = `
 {
-  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/dev/assets/oh-my-opencode.schema.json",
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/oh-my-opencode.schema.json",
   "agents": {
     "atlas": {
       "model": "anthropic/claude-sonnet-4-5",
@@ -472,7 +498,7 @@ exports[`generateModelConfig all native providers uses preferred models from fal
       "variant": "xhigh",
     },
     "multimodal-looker": {
-      "model": "openai/gpt-5.3-codex",
+      "model": "openai/gpt-5.4",
       "variant": "medium",
     },
     "oracle": {
@@ -523,7 +549,7 @@ exports[`generateModelConfig all native providers uses preferred models from fal
 
 exports[`generateModelConfig all native providers uses preferred models with isMax20 flag when all natives available 1`] = `
 {
-  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/dev/assets/oh-my-opencode.schema.json",
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/oh-my-opencode.schema.json",
   "agents": {
     "atlas": {
       "model": "anthropic/claude-sonnet-4-5",
@@ -547,7 +573,7 @@ exports[`generateModelConfig all native providers uses preferred models with isM
       "variant": "xhigh",
     },
     "multimodal-looker": {
-      "model": "openai/gpt-5.3-codex",
+      "model": "openai/gpt-5.4",
       "variant": "medium",
     },
     "oracle": {
@@ -599,7 +625,7 @@ exports[`generateModelConfig all native providers uses preferred models with isM
 
 exports[`generateModelConfig fallback providers uses OpenCode Zen models when only OpenCode Zen is available 1`] = `
 {
-  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/dev/assets/oh-my-opencode.schema.json",
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/oh-my-opencode.schema.json",
   "agents": {
     "atlas": {
       "model": "opencode/claude-sonnet-4-5",
@@ -623,7 +649,7 @@ exports[`generateModelConfig fallback providers uses OpenCode Zen models when on
       "variant": "xhigh",
     },
     "multimodal-looker": {
-      "model": "opencode/gpt-5.3-codex",
+      "model": "opencode/gpt-5.4",
       "variant": "medium",
     },
     "oracle": {
@@ -674,7 +700,7 @@ exports[`generateModelConfig fallback providers uses OpenCode Zen models when on
 
 exports[`generateModelConfig fallback providers uses OpenCode Zen models with isMax20 flag 1`] = `
 {
-  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/dev/assets/oh-my-opencode.schema.json",
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/oh-my-opencode.schema.json",
   "agents": {
     "atlas": {
       "model": "opencode/claude-sonnet-4-5",
@@ -698,7 +724,7 @@ exports[`generateModelConfig fallback providers uses OpenCode Zen models with is
       "variant": "xhigh",
     },
     "multimodal-looker": {
-      "model": "opencode/gpt-5.3-codex",
+      "model": "opencode/gpt-5.4",
       "variant": "medium",
     },
     "oracle": {
@@ -750,7 +776,7 @@ exports[`generateModelConfig fallback providers uses OpenCode Zen models with is
 
 exports[`generateModelConfig fallback providers uses GitHub Copilot models when only Copilot is available 1`] = `
 {
-  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/dev/assets/oh-my-opencode.schema.json",
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/oh-my-opencode.schema.json",
   "agents": {
     "atlas": {
       "model": "github-copilot/claude-sonnet-4.5",
@@ -816,7 +842,7 @@ exports[`generateModelConfig fallback providers uses GitHub Copilot models when 
 
 exports[`generateModelConfig fallback providers uses GitHub Copilot models with isMax20 flag 1`] = `
 {
-  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/dev/assets/oh-my-opencode.schema.json",
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/oh-my-opencode.schema.json",
   "agents": {
     "atlas": {
       "model": "github-copilot/claude-sonnet-4.5",
@@ -883,7 +909,7 @@ exports[`generateModelConfig fallback providers uses GitHub Copilot models with 
 
 exports[`generateModelConfig fallback providers uses ZAI model for librarian when only ZAI is available 1`] = `
 {
-  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/dev/assets/oh-my-opencode.schema.json",
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/oh-my-opencode.schema.json",
   "agents": {
     "atlas": {
       "model": "opencode/glm-4.7-free",
@@ -938,7 +964,7 @@ exports[`generateModelConfig fallback providers uses ZAI model for librarian whe
 
 exports[`generateModelConfig fallback providers uses ZAI model for librarian with isMax20 flag 1`] = `
 {
-  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/dev/assets/oh-my-opencode.schema.json",
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/oh-my-opencode.schema.json",
   "agents": {
     "atlas": {
       "model": "opencode/glm-4.7-free",
@@ -993,7 +1019,7 @@ exports[`generateModelConfig fallback providers uses ZAI model for librarian wit
 
 exports[`generateModelConfig mixed provider scenarios uses Claude + OpenCode Zen combination 1`] = `
 {
-  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/dev/assets/oh-my-opencode.schema.json",
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/oh-my-opencode.schema.json",
   "agents": {
     "atlas": {
       "model": "anthropic/claude-sonnet-4-5",
@@ -1017,7 +1043,7 @@ exports[`generateModelConfig mixed provider scenarios uses Claude + OpenCode Zen
       "variant": "xhigh",
     },
     "multimodal-looker": {
-      "model": "opencode/gpt-5.3-codex",
+      "model": "opencode/gpt-5.4",
       "variant": "medium",
     },
     "oracle": {
@@ -1068,7 +1094,7 @@ exports[`generateModelConfig mixed provider scenarios uses Claude + OpenCode Zen
 
 exports[`generateModelConfig mixed provider scenarios uses OpenAI + Copilot combination 1`] = `
 {
-  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/dev/assets/oh-my-opencode.schema.json",
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/oh-my-opencode.schema.json",
   "agents": {
     "atlas": {
       "model": "github-copilot/claude-sonnet-4.5",
@@ -1092,7 +1118,7 @@ exports[`generateModelConfig mixed provider scenarios uses OpenAI + Copilot comb
       "variant": "xhigh",
     },
     "multimodal-looker": {
-      "model": "openai/gpt-5.3-codex",
+      "model": "openai/gpt-5.4",
       "variant": "medium",
     },
     "oracle": {
@@ -1143,7 +1169,7 @@ exports[`generateModelConfig mixed provider scenarios uses OpenAI + Copilot comb
 
 exports[`generateModelConfig mixed provider scenarios uses Claude + ZAI combination (librarian uses ZAI) 1`] = `
 {
-  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/dev/assets/oh-my-opencode.schema.json",
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/oh-my-opencode.schema.json",
   "agents": {
     "atlas": {
       "model": "anthropic/claude-sonnet-4-5",
@@ -1204,7 +1230,7 @@ exports[`generateModelConfig mixed provider scenarios uses Claude + ZAI combinat
 
 exports[`generateModelConfig mixed provider scenarios uses Gemini + Claude combination (explore uses Gemini) 1`] = `
 {
-  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/dev/assets/oh-my-opencode.schema.json",
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/oh-my-opencode.schema.json",
   "agents": {
     "atlas": {
       "model": "anthropic/claude-sonnet-4-5",
@@ -1270,7 +1296,7 @@ exports[`generateModelConfig mixed provider scenarios uses Gemini + Claude combi
 
 exports[`generateModelConfig mixed provider scenarios uses all fallback providers together 1`] = `
 {
-  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/dev/assets/oh-my-opencode.schema.json",
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/oh-my-opencode.schema.json",
   "agents": {
     "atlas": {
       "model": "github-copilot/claude-sonnet-4.5",
@@ -1294,7 +1320,7 @@ exports[`generateModelConfig mixed provider scenarios uses all fallback provider
       "variant": "xhigh",
     },
     "multimodal-looker": {
-      "model": "opencode/gpt-5.3-codex",
+      "model": "opencode/gpt-5.4",
       "variant": "medium",
     },
     "oracle": {
@@ -1345,7 +1371,7 @@ exports[`generateModelConfig mixed provider scenarios uses all fallback provider
 
 exports[`generateModelConfig mixed provider scenarios uses all providers together 1`] = `
 {
-  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/dev/assets/oh-my-opencode.schema.json",
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/oh-my-opencode.schema.json",
   "agents": {
     "atlas": {
       "model": "anthropic/claude-sonnet-4-5",
@@ -1369,7 +1395,7 @@ exports[`generateModelConfig mixed provider scenarios uses all providers togethe
       "variant": "xhigh",
     },
     "multimodal-looker": {
-      "model": "openai/gpt-5.3-codex",
+      "model": "openai/gpt-5.4",
       "variant": "medium",
     },
     "oracle": {
@@ -1420,7 +1446,7 @@ exports[`generateModelConfig mixed provider scenarios uses all providers togethe
 
 exports[`generateModelConfig mixed provider scenarios uses all providers with isMax20 flag 1`] = `
 {
-  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-opencode/dev/assets/oh-my-opencode.schema.json",
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/oh-my-opencode.schema.json",
   "agents": {
     "atlas": {
       "model": "anthropic/claude-sonnet-4-5",
@@ -1444,7 +1470,7 @@ exports[`generateModelConfig mixed provider scenarios uses all providers with is
       "variant": "xhigh",
     },
     "multimodal-looker": {
-      "model": "openai/gpt-5.3-codex",
+      "model": "openai/gpt-5.4",
       "variant": "medium",
     },
     "oracle": {
