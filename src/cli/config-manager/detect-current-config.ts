@@ -10,17 +10,30 @@ function detectProvidersFromOmoConfig(): {
   hasOpencodeZen: boolean
   hasZaiCodingPlan: boolean
   hasKimiForCoding: boolean
+  hasOpencodeGo: boolean
 } {
   const omoConfigPath = getOmoConfigPath()
   if (!existsSync(omoConfigPath)) {
-    return { hasOpenAI: true, hasOpencodeZen: true, hasZaiCodingPlan: false, hasKimiForCoding: false }
+    return {
+      hasOpenAI: true,
+      hasOpencodeZen: true,
+      hasZaiCodingPlan: false,
+      hasKimiForCoding: false,
+      hasOpencodeGo: false,
+    }
   }
 
   try {
     const content = readFileSync(omoConfigPath, "utf-8")
     const omoConfig = parseJsonc<Record<string, unknown>>(content)
     if (!omoConfig || typeof omoConfig !== "object") {
-      return { hasOpenAI: true, hasOpencodeZen: true, hasZaiCodingPlan: false, hasKimiForCoding: false }
+      return {
+        hasOpenAI: true,
+        hasOpencodeZen: true,
+        hasZaiCodingPlan: false,
+        hasKimiForCoding: false,
+        hasOpencodeGo: false,
+      }
     }
 
     const configStr = JSON.stringify(omoConfig)
@@ -28,14 +41,22 @@ function detectProvidersFromOmoConfig(): {
     const hasOpencodeZen = configStr.includes('"opencode/')
     const hasZaiCodingPlan = configStr.includes('"zai-coding-plan/')
     const hasKimiForCoding = configStr.includes('"kimi-for-coding/')
+    const hasOpencodeGo = configStr.includes('"opencode-go/')
 
-    return { hasOpenAI, hasOpencodeZen, hasZaiCodingPlan, hasKimiForCoding }
+    return { hasOpenAI, hasOpencodeZen, hasZaiCodingPlan, hasKimiForCoding, hasOpencodeGo }
   } catch {
-    return { hasOpenAI: true, hasOpencodeZen: true, hasZaiCodingPlan: false, hasKimiForCoding: false }
+    return {
+      hasOpenAI: true,
+      hasOpencodeZen: true,
+      hasZaiCodingPlan: false,
+      hasKimiForCoding: false,
+      hasOpencodeGo: false,
+    }
   }
 }
 
 export function detectCurrentConfig(): DetectedConfig {
+  const PACKAGE_NAME = "oh-my-opencode"
   const result: DetectedConfig = {
     isInstalled: false,
     hasClaude: true,
@@ -45,7 +66,7 @@ export function detectCurrentConfig(): DetectedConfig {
     hasCopilot: false,
     hasOpencodeZen: true,
     hasZaiCodingPlan: false,
-hasKimiForCoding: false,
+    hasKimiForCoding: false,
     hasOpencodeGo: false,
   }
 
@@ -61,7 +82,7 @@ hasKimiForCoding: false,
 
   const openCodeConfig = parseResult.config
   const plugins = openCodeConfig.plugin ?? []
-  result.isInstalled = plugins.some((p) => p.startsWith("oh-my-opencode"))
+  result.isInstalled = plugins.some((plugin) => plugin.startsWith(PACKAGE_NAME))
 
   if (!result.isInstalled) {
     return result
@@ -70,11 +91,12 @@ hasKimiForCoding: false,
   const providers = openCodeConfig.provider as Record<string, unknown> | undefined
   result.hasGemini = providers ? "google" in providers : false
 
-  const { hasOpenAI, hasOpencodeZen, hasZaiCodingPlan, hasKimiForCoding } = detectProvidersFromOmoConfig()
+  const { hasOpenAI, hasOpencodeZen, hasZaiCodingPlan, hasKimiForCoding, hasOpencodeGo } = detectProvidersFromOmoConfig()
   result.hasOpenAI = hasOpenAI
   result.hasOpencodeZen = hasOpencodeZen
   result.hasZaiCodingPlan = hasZaiCodingPlan
   result.hasKimiForCoding = hasKimiForCoding
+  result.hasOpencodeGo = hasOpencodeGo
 
   return result
 }
