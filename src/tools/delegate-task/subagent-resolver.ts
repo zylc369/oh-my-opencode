@@ -13,6 +13,7 @@ import { log } from "../../shared/logger"
 import { getAvailableModelsForDelegateTask } from "./available-models"
 import type { FallbackEntry } from "../../shared/model-requirements"
 import { resolveModelForDelegateTask } from "./model-selection"
+import { fuzzyMatchModel } from "../../shared/model-availability"
 
 export async function resolveSubagentExecution(
   args: DelegateTaskArgs,
@@ -101,13 +102,17 @@ Create the work plan directly - that's your job as the planning agent.`,
     const agentOverride = agentOverrides?.[agentConfigKey as keyof typeof agentOverrides]
       ?? (agentOverrides ? Object.entries(agentOverrides).find(([key]) => key.toLowerCase() === agentConfigKey)?.[1] : undefined)
     const agentRequirement = AGENT_MODEL_REQUIREMENTS[agentConfigKey]
+    const agentCategoryModel = agentOverride?.category
+      ? userCategories?.[agentOverride.category]?.model
+      : undefined
     const normalizedAgentFallbackModels = normalizeFallbackModels(
       agentOverride?.fallback_models
       ?? (agentOverride?.category ? userCategories?.[agentOverride.category]?.fallback_models : undefined)
     )
 
-    if (agentOverride?.model || agentRequirement || matchedAgent.model) {
-      const availableModels = await getAvailableModelsForDelegateTask(client)
+    const availableModels = await getAvailableModelsForDelegateTask(client)
+
+    if (agentOverride?.model || agentCategoryModel || agentRequirement || matchedAgent.model) {
 
       const normalizedMatchedModel = matchedAgent.model
         ? normalizeModelFormat(matchedAgent.model)
@@ -117,7 +122,7 @@ Create the work plan directly - that's your job as the planning agent.`,
         : undefined
 
       const resolution = resolveModelForDelegateTask({
-        userModel: agentOverride?.model,
+        userModel: agentOverride?.model ?? agentCategoryModel,
         userFallbackModels: flattenToFallbackModelStrings(normalizedAgentFallbackModels),
         categoryDefaultModel: matchedAgentModelStr,
         fallbackChain: agentRequirement?.fallbackChain,
@@ -133,16 +138,19 @@ Create the work plan directly - that's your job as the planning agent.`,
           const variantToUse = agentOverride?.variant ?? resolution.variant
           categoryModel = variantToUse ? { ...normalized, variant: variantToUse } : normalized
         }
-      } else if (resolutionSkipped && agentOverride?.model) {
+      } else if (resolutionSkipped && (agentOverride?.model ?? agentCategoryModel)) {
         // Cold cache: resolution was skipped but user explicitly configured a model.
         // Honor the user override directly — don't fall through to hardcoded fallback chain.
-        const normalized = normalizeModelFormat(agentOverride.model)
+        const normalized = normalizeModelFormat((agentOverride?.model ?? agentCategoryModel)!)
         if (normalized) {
-          const variantToUse = agentOverride?.variant
+          const agentCategoryVariant = agentOverride?.category
+            ? userCategories?.[agentOverride.category]?.variant
+            : undefined
+          const variantToUse = agentOverride?.variant ?? agentCategoryVariant
           categoryModel = variantToUse ? { ...normalized, variant: variantToUse } : normalized
           log("[delegate-task] Cold cache: using explicit user override for subagent", {
             agent: agentToUse,
-            model: agentOverride.model,
+            model: agentOverride?.model ?? agentCategoryModel,
           })
         }
       }
@@ -186,7 +194,15 @@ Create the work plan directly - that's your job as the planning agent.`,
     if (!categoryModel && matchedAgent.model) {
       const normalizedMatchedModel = normalizeModelFormat(matchedAgent.model)
       if (normalizedMatchedModel) {
-        categoryModel = normalizedMatchedModel
+        const fullModel = `${normalizedMatchedModel.providerID}/${normalizedMatchedModel.modelID}`
+        if (availableModels.size === 0 || fuzzyMatchModel(fullModel, availableModels, [normalizedMatchedModel.providerID])) {
+          categoryModel = normalizedMatchedModel
+        } else {
+          log("[delegate-task] Skipping unavailable agent default model", {
+            agent: agentToUse,
+            model: fullModel,
+          })
+        }
       }
     }
   } catch (error) {
