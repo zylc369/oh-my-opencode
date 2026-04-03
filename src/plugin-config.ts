@@ -20,6 +20,7 @@ const PARTIAL_STRING_ARRAY_KEYS = new Set([
   "disabled_hooks",
   "disabled_commands",
   "disabled_tools",
+  "mcp_env_allowlist",
 ]);
 
 export function parseConfigPartially(
@@ -154,6 +155,12 @@ export function mergeConfigs(
         ...(override.disabled_tools ?? []),
       ]),
     ],
+    mcp_env_allowlist: [
+      ...new Set([
+        ...(base.mcp_env_allowlist ?? []),
+        ...(override.mcp_env_allowlist ?? []),
+      ]),
+    ],
     claude_code: deepMerge(base.claude_code, override.claude_code),
   };
 }
@@ -170,6 +177,13 @@ export function loadPluginConfig(
       ? userDetected.path
       : path.join(configDir, "oh-my-opencode.json");
 
+  if (userDetected.legacyPath) {
+    log("Canonical plugin config detected alongside legacy config. Remove the legacy file to avoid confusion.", {
+      canonicalPath: userDetected.path,
+      legacyPath: userDetected.legacyPath,
+    });
+  }
+
   // Auto-copy legacy config file to canonical name if needed
   if (userDetected.format !== "none" && path.basename(userDetected.path).startsWith(LEGACY_CONFIG_BASENAME)) {
     migrateLegacyConfigFile(userDetected.path);
@@ -183,14 +197,22 @@ export function loadPluginConfig(
       ? projectDetected.path
       : path.join(projectBasePath, "oh-my-opencode.json");
 
+  if (projectDetected.legacyPath) {
+    log("Canonical plugin config detected alongside legacy config. Remove the legacy file to avoid confusion.", {
+      canonicalPath: projectDetected.path,
+      legacyPath: projectDetected.legacyPath,
+    });
+  }
+
   // Auto-copy legacy project config file to canonical name if needed
   if (projectDetected.format !== "none" && path.basename(projectDetected.path).startsWith(LEGACY_CONFIG_BASENAME)) {
     migrateLegacyConfigFile(projectDetected.path);
   }
 
   // Load user config first (base). Parse empty config through Zod to apply field defaults.
+  const userConfig = loadConfigFromPath(userConfigPath, ctx)
   let config: OhMyOpenCodeConfig =
-    loadConfigFromPath(userConfigPath, ctx) ?? OhMyOpenCodeConfigSchema.parse({});
+    userConfig ?? OhMyOpenCodeConfigSchema.parse({});
 
   // Override with project config
   const projectConfig = loadConfigFromPath(projectConfigPath, ctx);
@@ -200,6 +222,7 @@ export function loadPluginConfig(
 
   config = {
     ...config,
+    mcp_env_allowlist: userConfig?.mcp_env_allowlist ?? [],
   };
 
   log("Final merged config", {
