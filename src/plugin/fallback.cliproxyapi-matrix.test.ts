@@ -1,14 +1,7 @@
 declare const require: (name: string) => any
-const { afterEach, describe, expect, mock, test } = require("bun:test")
+const { afterEach, describe, expect, spyOn, test } = require("bun:test")
 
 const PROVIDER_ID = "cliproxyapi"
-
-mock.module("../shared/connected-providers-cache", () => ({
-  readConnectedProvidersCache: () => [PROVIDER_ID],
-  readProviderModelsCache: () => ({
-    connected: [PROVIDER_ID],
-  }),
-}))
 
 import { createEventHandler } from "./event"
 import { createChatMessageHandler } from "./chat-message"
@@ -18,6 +11,7 @@ import type { RuntimeFallbackPluginInput } from "../hooks/runtime-fallback/types
 import { _resetForTesting } from "../features/claude-code-session-state"
 import { _resetForTesting as _resetModelFallbackForTesting } from "../hooks/model-fallback/hook"
 import { SessionCategoryRegistry } from "../shared/session-category-registry"
+import * as connectedProvidersCache from "../shared/connected-providers-cache"
 
 type EventHandlerArgs = Parameters<typeof createEventHandler>[0]
 type ChatMessageHandlerArgs = Parameters<typeof createChatMessageHandler>[0]
@@ -90,6 +84,9 @@ type PromptAsyncCall = {
   parts?: Array<{ type?: string; text?: string }>
 }
 
+let readConnectedProvidersCacheSpy: { mockRestore: () => void } | undefined
+let readProviderModelsCacheSpy: { mockRestore: () => void } | undefined
+
 function createPluginConfig(mode: HarnessMode) {
   return {
     agents: {
@@ -112,6 +109,7 @@ function createHarness(args: {
   promptAsyncImpl?: (call: PromptAsyncCall) => Promise<unknown>
   sessionTimeoutMs?: number
 }) {
+  setupConnectedProviderCacheMocks()
   const abortCalls: string[] = []
   const promptCalls: string[] = []
   const promptAsyncCalls: PromptAsyncCall[] = []
@@ -349,6 +347,24 @@ async function triggerAssistantMessageError(
       },
     },
   }))
+}
+
+afterEach(() => {
+  readConnectedProvidersCacheSpy?.mockRestore()
+  readProviderModelsCacheSpy?.mockRestore()
+  readConnectedProvidersCacheSpy = undefined
+  readProviderModelsCacheSpy = undefined
+})
+
+function setupConnectedProviderCacheMocks(): void {
+  readConnectedProvidersCacheSpy = spyOn(connectedProvidersCache, "readConnectedProvidersCache").mockReturnValue([
+    PROVIDER_ID,
+  ])
+  readProviderModelsCacheSpy = spyOn(connectedProvidersCache, "readProviderModelsCache").mockReturnValue({
+    connected: [PROVIDER_ID],
+    models: {},
+    updatedAt: new Date(0).toISOString(),
+  })
 }
 
 afterEach(() => {

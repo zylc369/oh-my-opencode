@@ -1,4 +1,4 @@
-const { describe, it, expect, mock, beforeEach } = require("bun:test")
+const { describe, it, expect, mock, beforeEach, afterAll } = require("bun:test")
 
 import type { MessageData } from "./types"
 
@@ -17,7 +17,12 @@ mock.module("./storage", () => ({
   readParts: () => storedParts,
 }))
 
+afterAll(() => {
+  mock.restore()
+})
+
 const { recoverToolResultMissing } = await import("./recover-tool-result-missing")
+mock.restore()
 
 function createMockClient(messages: MessageData[] = []) {
   const promptAsync = mock(() => Promise.resolve({}))
