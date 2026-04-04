@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test"
-import type { MigrationResult } from "./auto-migrate"
+import type { MigrationResult } from "./auto-migrate-runner"
 
 const mockCheckForLegacyPluginEntry = mock(() => ({
   hasLegacyEntry: false,
@@ -26,7 +26,7 @@ mock.module("../../shared/logger", () => ({
   log: mockLog,
 }))
 
-mock.module("./auto-migrate", () => ({
+mock.module("./auto-migrate-runner", () => ({
   autoMigrateLegacyPluginEntry: mockAutoMigrate,
 }))
 
@@ -53,7 +53,9 @@ function createEvent(type: string, parentID?: string) {
 }
 
 async function importFreshModule() {
-  return import(`./hook?t=${Date.now()}-${Math.random()}`)
+  const module = await import(`./hook?t=${Date.now()}-${Math.random()}`)
+  mock.restore()
+  return module
 }
 
 describe("createLegacyPluginToastHook", () => {

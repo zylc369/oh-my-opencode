@@ -1,3 +1,5 @@
+/// <reference path="../../bun-test.d.ts" />
+
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test"
 import type { LegacyPluginCheckResult } from "./legacy-plugin-warning"
 
@@ -35,7 +37,10 @@ afterAll(() => {
 })
 
 async function importFreshStartupWarningModule(): Promise<typeof import("./log-legacy-plugin-startup-warning")> {
-  return import(`./log-legacy-plugin-startup-warning?test=${Date.now()}-${Math.random()}`)
+  const module = await import(`./log-legacy-plugin-startup-warning?test=${Date.now()}-${Math.random()}`)
+  mock.restore()
+  consoleWarnSpy = spyOn(console, "warn").mockImplementation(() => {})
+  return module
 }
 
 describe("logLegacyPluginStartupWarning", () => {
@@ -143,7 +148,7 @@ describe("logLegacyPluginStartupWarning", () => {
       logLegacyPluginStartupWarning()
 
       //#then
-      const calls = consoleWarnSpy.mock.calls.map((c) => c[0] as string)
+      const calls = consoleWarnSpy.mock.calls.map((call: string[]) => call[0] ?? "")
       expect(calls.some((c) => c.includes("Auto-migrated"))).toBe(true)
     })
   })

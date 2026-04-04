@@ -1,5 +1,5 @@
 declare const require: (name: string) => any
-const { describe, expect, test, beforeEach, mock } = require("bun:test")
+const { describe, expect, test, beforeEach, mock, afterAll } = require("bun:test")
 
 const readConnectedProvidersCacheMock = mock(() => null)
 
@@ -7,7 +7,10 @@ mock.module("./connected-providers-cache", () => ({
   readConnectedProvidersCache: readConnectedProvidersCacheMock,
 }))
 
-import { shouldRetryError, selectFallbackProvider } from "./model-error-classifier"
+afterAll(() => { mock.restore() })
+
+const { shouldRetryError, selectFallbackProvider } = await import("./model-error-classifier")
+mock.restore()
 
 describe("model-error-classifier", () => {
   beforeEach(() => {
@@ -105,3 +108,5 @@ describe("model-error-classifier", () => {
     expect(result).toBe(true)
   })
 })
+
+export {}

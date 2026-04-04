@@ -57,6 +57,7 @@ import { join } from "node:path"
 import { pruneStaleTasksAndNotifications } from "./task-poller"
 import { checkAndInterruptStaleTasks } from "./task-poller"
 import { removeTaskToastTracking } from "./remove-task-toast-tracking"
+import { abortWithTimeout } from "./abort-with-timeout"
 import {
   MIN_SESSION_GONE_POLLS,
   verifySessionExists as verifySessionStillExists,
@@ -189,6 +190,17 @@ export class BackgroundManager {
     this.preStartDescendantReservations = new Set()
     this.enableParentSessionNotifications = options?.enableParentSessionNotifications ?? true
     this.registerProcessCleanup()
+  }
+
+  private async abortSessionWithLogging(sessionID: string, reason: string): Promise<void> {
+    try {
+      await abortWithTimeout(this.client, sessionID)
+    } catch (error) {
+      log(`[background-agent] Failed to abort session during ${reason}:`, {
+        sessionID,
+        error,
+      })
+    }
   }
 
   async assertCanSpawn(parentSessionID: string): Promise<SubagentSpawnContext> {
@@ -448,11 +460,7 @@ export class BackgroundManager {
     const sessionID = createResult.data.id
 
     if (task.status === "cancelled") {
-      await this.client.session.abort({
-        path: { id: sessionID },
-      }).catch((error) => {
-        log("[background-agent] Failed to abort cancelled pre-start session:", error)
-      })
+      await this.abortSessionWithLogging(sessionID, "cancelled pre-start cleanup")
       this.concurrencyManager.release(concurrencyKey)
       return
     }
@@ -570,9 +578,7 @@ export class BackgroundManager {
 
         // Abort the session to prevent infinite polling hang
         // Awaited to prevent dangling promise during subagent teardown (Bun/WebKit SIGABRT)
-        await this.client.session.abort({
-          path: { id: sessionID },
-        }).catch(() => {})
+        await this.abortSessionWithLogging(sessionID, "launch error cleanup")
 
         this.markForNotification(existingTask)
         this.enqueueNotificationForParent(existingTask.parentSessionID, () => this.notifyParentSession(existingTask)).catch(err => {
@@ -853,9 +859,7 @@ export class BackgroundManager {
       // Abort the session to prevent infinite polling hang
       // Awaited to prevent dangling promise during subagent teardown (Bun/WebKit SIGABRT)
       if (existingTask.sessionID) {
-        await this.client.session.abort({
-          path: { id: existingTask.sessionID },
-        }).catch(() => {})
+        await this.abortSessionWithLogging(existingTask.sessionID, "resume error cleanup")
       }
 
       this.markForNotification(existingTask)
@@ -879,7 +883,11 @@ export class BackgroundManager {
         (t) => t.status !== "completed" && t.status !== "cancelled"
       )
       return incomplete.length > 0
-    } catch {
+    } catch (error) {
+      log("[background-agent] Failed to check session todos:", {
+        sessionID,
+        error,
+      })
       return false
     }
   }
@@ -1269,7 +1277,6 @@ export class BackgroundManager {
         return false
       }
 
-      // Additionally check that at least one message has content (not just empty)
       // OpenCode API uses different part types than Anthropic's API:
       // - "reasoning" with .text property (thinking/reasoning content)
       // - "tool" with .state.output property (tool call results)
@@ -1438,9 +1445,7 @@ export class BackgroundManager {
 
     if (abortSession && task.sessionID) {
       // Awaited to prevent dangling promise during subagent teardown (Bun/WebKit SIGABRT)
-      await this.client.session.abort({
-        path: { id: task.sessionID },
-      }).catch(() => {})
+      await this.abortSessionWithLogging(task.sessionID, `task cancellation (${source})`)
 
       SessionCategoryRegistry.remove(task.sessionID)
     }
@@ -1557,9 +1562,7 @@ export class BackgroundManager {
 
     if (task.sessionID) {
       // Awaited to prevent dangling promise during subagent teardown (Bun/WebKit SIGABRT)
-      await this.client.session.abort({
-        path: { id: task.sessionID },
-      }).catch(() => {})
+      await this.abortSessionWithLogging(task.sessionID, `task completion (${source})`)
 
       SessionCategoryRegistry.remove(task.sessionID)
     }
@@ -1576,9 +1579,6 @@ export class BackgroundManager {
   }
 
   private async notifyParentSession(task: BackgroundTask): Promise<void> {
-    // Note: Callers must release concurrency before calling this method
-    // to ensure slots are freed even if notification fails
-
     const duration = formatDuration(task.startedAt ?? new Date(), task.completedAt)
 
     log("[background-agent] notifyParentSession called for task:", task.id)
@@ -1903,16 +1903,11 @@ export class BackgroundManager {
           continue
         }
 
-        // Explicit terminal non-idle status (e.g., "interrupted") — complete immediately,
-        // skipping output validation (session will never produce more output).
-        // Unknown statuses fall through to the idle/gone path with output validation.
         if (sessionStatus && isTerminalSessionStatus(sessionStatus.type)) {
           await this.tryCompleteTask(task, `polling (terminal session status: ${sessionStatus.type})`)
           continue
         }
 
-        // Unknown non-idle status — not active, not terminal, not idle.
-        // Fall through to idle/gone completion path with output validation.
         if (sessionStatus && sessionStatus.type !== "idle") {
           log("[background-agent] Unknown session status, treating as potentially idle:", {
             taskId: task.id,
@@ -1989,9 +1984,7 @@ export class BackgroundManager {
       if (task.status === "running" && task.sessionID) {
         abortRequests.push({
           sessionID: task.sessionID,
-          promise: this.client.session.abort({
-            path: { id: task.sessionID },
-          }),
+          promise: abortWithTimeout(this.client, task.sessionID),
         })
       }
     }
@@ -2065,17 +2058,24 @@ export class BackgroundManager {
     }
 
     const previous = this.notificationQueueByParent.get(parentSessionID) ?? Promise.resolve()
+    const cleanupQueueEntry = (): void => {
+      if (this.notificationQueueByParent.get(parentSessionID) === current) {
+        this.notificationQueueByParent.delete(parentSessionID)
+      }
+    }
+
     const current = previous
-      .catch(() => {})
+      .catch((error) => {
+        log("[background-agent] Continuing notification queue after previous failure:", {
+          parentSessionID,
+          error,
+        })
+      })
       .then(operation)
 
     this.notificationQueueByParent.set(parentSessionID, current)
 
-    void current.finally(() => {
-      if (this.notificationQueueByParent.get(parentSessionID) === current) {
-        this.notificationQueueByParent.delete(parentSessionID)
-      }
-    }).catch(() => {})
+    void current.then(cleanupQueueEntry, cleanupQueueEntry)
 
     return current
   }

@@ -1,5 +1,5 @@
 declare const require: (name: string) => any
-const { describe, test, expect, beforeEach, afterEach, spyOn, mock } = require("bun:test")
+const { describe, test, expect, beforeEach, afterEach, afterAll, spyOn, mock } = require("bun:test")
 
 mock.module("../../shared/connected-providers-cache", () => ({
   readConnectedProvidersCache: () => null,
@@ -10,6 +10,8 @@ mock.module("../../shared/connected-providers-cache", () => ({
   updateConnectedProvidersCache: () => {},
 }))
 
+afterAll(() => { mock.restore() })
+
 import { getSessionPromptParams, clearSessionPromptParams } from "../../shared/session-prompt-params-state"
 import { tmpdir } from "node:os"
 import type { PluginInput } from "@opencode-ai/plugin"
@@ -18,6 +20,7 @@ import { MIN_IDLE_TIME_MS } from "./constants"
 import { BackgroundManager } from "./manager"
 import { ConcurrencyManager } from "./concurrency"
 import { initTaskToastManager, _resetTaskToastManagerForTesting } from "../task-toast-manager/manager"
+mock.restore()
 
 
 const TASK_TTL_MS = 30 * 60 * 1000
@@ -236,7 +239,7 @@ function stubNotifyParentSession(manager: BackgroundManager): void {
 }
 
 async function flushBackgroundNotifications(): Promise<void> {
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 12; i++) {
     await Promise.resolve()
   }
 }
@@ -2568,7 +2571,7 @@ describe("BackgroundManager - Non-blocking Queue Integration", () => {
         abortCalled,
         new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 100)),
       ])
-      await Promise.resolve()
+      await flushBackgroundNotifications()
 
       // then
       const updatedTask = manager.getTask(task.id)
