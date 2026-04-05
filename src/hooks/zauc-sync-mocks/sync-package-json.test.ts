@@ -19,10 +19,10 @@ async function importFreshSyncPackageJsonModule(): Promise<typeof import("../aut
     NPM_REGISTRY_URL: "https://registry.npmjs.org/-/package/oh-my-opencode/dist-tags",
     NPM_FETCH_TIMEOUT: 5000,
     VERSION_FILE: join(TEST_CACHE_DIR, "version"),
-    USER_CONFIG_DIR: "/tmp/opencode-config",
-    USER_OPENCODE_CONFIG: "/tmp/opencode-config/opencode.json",
-    USER_OPENCODE_CONFIG_JSONC: "/tmp/opencode-config/opencode.jsonc",
     INSTALLED_PACKAGE_JSON: join(TEST_CACHE_DIR, "node_modules", "oh-my-opencode", "package.json"),
+    getUserConfigDir: () => "/tmp/opencode-config",
+    getUserOpencodeConfig: () => "/tmp/opencode-config/opencode.json",
+    getUserOpencodeConfigJsonc: () => "/tmp/opencode-config/opencode.jsonc",
     getWindowsAppdataDir: () => null,
   }))
 
@@ -148,7 +148,7 @@ describe("syncCachePackageJsonToIntent", () => {
   })
 
   describe("#given cache package.json does not exist", () => {
-    it("#then returns file_not_found error", async () => {
+    it("#then creates cache package.json with the plugin dependency", async () => {
       cleanupTestCache()
       const { syncCachePackageJsonToIntent } = await importFreshSyncPackageJsonModule()
 
@@ -161,13 +161,14 @@ describe("syncCachePackageJsonToIntent", () => {
 
       const result = syncCachePackageJsonToIntent(pluginInfo)
 
-      expect(result.synced).toBe(false)
-      expect(result.error).toBe("file_not_found")
+      expect(result.synced).toBe(true)
+      expect(result.error).toBeNull()
+      expect(readCachePackageJsonVersion()).toBe("latest")
     })
   })
 
   describe("#given plugin not in cache package.json dependencies", () => {
-    it("#then returns plugin_not_in_deps error", async () => {
+    it("#then adds the plugin dependency and preserves existing dependencies", async () => {
       cleanupTestCache()
       mkdirSync(TEST_CACHE_DIR, { recursive: true })
       writeFileSync(
@@ -186,8 +187,13 @@ describe("syncCachePackageJsonToIntent", () => {
 
       const result = syncCachePackageJsonToIntent(pluginInfo)
 
-      expect(result.synced).toBe(false)
-      expect(result.error).toBe("plugin_not_in_deps")
+      expect(result.synced).toBe(true)
+      expect(result.error).toBeNull()
+
+      const content = readFileSync(join(TEST_CACHE_DIR, "package.json"), "utf-8")
+      const pkg = JSON.parse(content) as { dependencies?: Record<string, string> }
+      expect(pkg.dependencies?.["oh-my-opencode"]).toBe("latest")
+      expect(pkg.dependencies?.other).toBe("1.0.0")
     })
   })
 

@@ -84,9 +84,75 @@ describe("model-error-classifier", () => {
     expect(provider).toBe("provider-x")
   })
 
-  test("treats FreeUsageLimitError (PascalCase name) as retryable by name", () => {
+  test("treats QuotaExceededError (PascalCase name) as non-retryable STOP error", () => {
+    //#given
+    const error = { name: "QuotaExceededError" }
+
+    //#when
+    const result = shouldRetryError(error)
+
+    //#then
+    expect(result).toBe(false)
+  })
+
+  test("treats quotaexceedederror (lowercase name) as non-retryable STOP error", () => {
+    //#given
+    const error = { name: "quotaexceedederror" }
+
+    //#when
+    const result = shouldRetryError(error)
+
+    //#then
+    expect(result).toBe(false)
+  })
+
+  test("treats InsufficientCreditsError (PascalCase name) as non-retryable STOP error", () => {
+    //#given
+    const error = { name: "InsufficientCreditsError" }
+
+    //#when
+    const result = shouldRetryError(error)
+
+    //#then
+    expect(result).toBe(false)
+  })
+
+  test("treats insufficientcreditserror (lowercase name) as non-retryable STOP error", () => {
+    //#given
+    const error = { name: "insufficientcreditserror" }
+
+    //#when
+    const result = shouldRetryError(error)
+
+    //#then
+    expect(result).toBe(false)
+  })
+
+  test("treats FreeUsageLimitError (PascalCase name) as non-retryable STOP error", () => {
     //#given
     const error = { name: "FreeUsageLimitError" }
+
+    //#when
+    const result = shouldRetryError(error)
+
+    //#then
+    expect(result).toBe(false)
+  })
+
+  test("treats freeusagelimiterror (lowercase name) as non-retryable STOP error", () => {
+    //#given
+    const error = { name: "freeusagelimiterror" }
+
+    //#when
+    const result = shouldRetryError(error)
+
+    //#then
+    expect(result).toBe(false)
+  })
+
+  test("treats 'bad request' message as retryable (GitHub Copilot rolling update)", () => {
+    //#given
+    const error = { message: "400 Bad Request" }
 
     //#when
     const result = shouldRetryError(error)
@@ -95,9 +161,9 @@ describe("model-error-classifier", () => {
     expect(result).toBe(true)
   })
 
-  test("treats freeusagelimiterror (lowercase name) as retryable by name", () => {
+  test("treats 'bad request' lowercase as retryable", () => {
     //#given
-    const error = { name: "freeusagelimiterror" }
+    const error = { message: "bad request: model temporarily unavailable" }
 
     //#when
     const result = shouldRetryError(error)
