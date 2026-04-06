@@ -21,7 +21,10 @@ export const AGENT_DISPLAY_NAMES: Record<string, string> = {
 }
 
 const AGENT_LIST_SORT_PREFIXES: Record<string, string> = {
-  atlas: "\u200B",
+  sisyphus: "\u200B",
+  hephaestus: "\u200B\u200B",
+  prometheus: "\u200B\u200B\u200B",
+  atlas: "\u200B\u200B\u200B\u200B",
 }
 
 function stripAgentListSortPrefix(agentName: string): string {
@@ -94,6 +97,28 @@ export function normalizeAgentForPrompt(agentName: string | undefined): string |
   }
   if (AGENT_DISPLAY_NAMES[lower] !== undefined) {
     return AGENT_DISPLAY_NAMES[lower]
+  }
+
+  return trimmed
+}
+
+export function normalizeAgentForPromptKey(agentName: string | undefined): string | undefined {
+  if (typeof agentName !== "string") {
+    return undefined
+  }
+
+  const trimmed = stripAgentListSortPrefix(agentName.trim())
+  if (!trimmed) {
+    return undefined
+  }
+
+  const lower = trimmed.toLowerCase()
+  const reversed = REVERSE_DISPLAY_NAMES[lower]
+  if (reversed !== undefined) {
+    return reversed
+  }
+  if (AGENT_DISPLAY_NAMES[lower] !== undefined) {
+    return lower
   }
 
   return trimmed
