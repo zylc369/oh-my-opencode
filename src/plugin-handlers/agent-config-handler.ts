@@ -163,9 +163,32 @@ export async function applyAgentConfig(params: {
         getAgentDisplayName("sisyphus");
     }
 
+    // Assembly order: Sisyphus -> Hephaestus -> Prometheus -> Atlas
     const agentConfig: Record<string, unknown> = {
       sisyphus: builtinAgents.sisyphus,
     };
+
+    if (builtinAgents.hephaestus) {
+      agentConfig["hephaestus"] = builtinAgents.hephaestus;
+    }
+
+    if (plannerEnabled) {
+      const prometheusOverride = params.pluginConfig.agents?.["prometheus"] as
+        | (Record<string, unknown> & { prompt_append?: string })
+        | undefined;
+
+      agentConfig["prometheus"] = await buildPrometheusAgentConfig({
+        configAgentPlan: configAgent?.plan,
+        pluginPrometheusOverride: prometheusOverride,
+        userCategories: params.pluginConfig.categories,
+        currentModel,
+        disabledTools: params.pluginConfig.disabled_tools,
+      });
+    }
+
+    if (builtinAgents.atlas) {
+      agentConfig["atlas"] = builtinAgents.atlas;
+    }
 
     agentConfig["sisyphus-junior"] = createSisyphusJuniorAgentWithOverrides(
       params.pluginConfig.agents?.["sisyphus-junior"],
@@ -185,20 +208,6 @@ export async function applyAgentConfig(params: {
         description: `${(configAgent?.build?.description as string) ?? "Build agent"} (OpenCode default)`,
       };
       agentConfig["OpenCode-Builder"] = override ? { ...base, ...override } : base;
-    }
-
-    if (plannerEnabled) {
-      const prometheusOverride = params.pluginConfig.agents?.["prometheus"] as
-        | (Record<string, unknown> & { prompt_append?: string })
-        | undefined;
-
-      agentConfig["prometheus"] = await buildPrometheusAgentConfig({
-        configAgentPlan: configAgent?.plan,
-        pluginPrometheusOverride: prometheusOverride,
-        userCategories: params.pluginConfig.categories,
-        currentModel,
-        disabledTools: params.pluginConfig.disabled_tools,
-      });
     }
 
     const filteredConfigAgents = configAgent
@@ -248,7 +257,9 @@ export async function applyAgentConfig(params: {
     params.config.agent = {
       ...agentConfig,
       ...Object.fromEntries(
-        Object.entries(builtinAgents).filter(([key]) => key !== "sisyphus"),
+        Object.entries(builtinAgents).filter(
+          ([key]) => key !== "sisyphus" && key !== "hephaestus" && key !== "atlas",
+        ),
       ),
       ...filterDisabledAgents(filteredUserAgents),
       ...filterDisabledAgents(filteredProjectAgents),
