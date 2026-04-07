@@ -415,6 +415,35 @@ You are starting a Sisyphus work session.
       expect(output.parts[0].text).toContain("2026-01-15-feature-implementation")
       expect(output.parts[0].text).toContain("Auto-Selected Plan")
     })
+
+    test("should match quoted human-readable plan names to slugged filenames", async () => {
+      // given - saved plan uses a slugged filename
+      const plansDir = join(testDir, ".sisyphus", "plans")
+      mkdirSync(plansDir, { recursive: true })
+
+      const planPath = join(plansDir, "my-feature-plan.md")
+      writeFileSync(planPath, "# My Feature Plan\n- [ ] Task 1")
+
+      const hook = createStartWorkHook(createMockPluginInput())
+      const output = {
+        parts: [
+          {
+            type: "text",
+            text: createStartWorkPrompt({ userRequest: "\"my feature plan\"" }),
+          },
+        ],
+      }
+
+      // when
+      await hook["chat.message"](
+        { sessionID: "session-123" },
+        output,
+      )
+
+      // then
+      expect(output.parts[0].text).toContain("my-feature-plan")
+      expect(output.parts[0].text).toContain("Auto-Selected Plan")
+    })
   })
 
   describe("session agent management", () => {
@@ -496,7 +525,7 @@ You are starting a Sisyphus work session.
       )
 
       // then
-      expect(output.message.agent).toBe("Sisyphus (Ultraworker)")
+      expect(output.message.agent).toBe("Sisyphus - Ultraworker")
       expect(sessionState.getSessionAgent("ses-prometheus-to-sisyphus")).toBe("sisyphus")
     })
 
@@ -524,7 +553,7 @@ You are starting a Sisyphus work session.
       )
 
       // then
-      expect(output.message.agent).toBe("Sisyphus (Ultraworker)")
+      expect(output.message.agent).toBe("Sisyphus - Ultraworker")
       expect(sessionState.getSessionAgent("ses-prometheus-to-worker")).toBe("sisyphus")
       expect(readBoulderState(testDir)?.agent).toBe("sisyphus")
     })
@@ -559,7 +588,7 @@ You are starting a Sisyphus work session.
       )
 
       // then
-      expect(output.message.agent).toBe("Sisyphus (Ultraworker)")
+      expect(output.message.agent).toBe("Sisyphus - Ultraworker")
       expect(readBoulderState(testDir)?.agent).toBe("sisyphus")
     })
 
