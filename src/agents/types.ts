@@ -96,6 +96,11 @@ export function isGpt5_3CodexModel(model: string): boolean {
   return modelName.includes("gpt-5.3-codex") || modelName.includes("gpt-5-3-codex");
 }
 
+export function isClaudeOpus47Model(model: string): boolean {
+  const modelName = extractModelName(model).toLowerCase().replaceAll(".", "-");
+  return modelName.includes("claude-opus-4-7");
+}
+
 const GEMINI_PROVIDERS = ["google/", "google-vertex/"];
 
 export function isMiniMaxModel(model: string): boolean {
@@ -138,7 +143,10 @@ export type OverridableAgentName = "build" | BuiltinAgentName;
 export type AgentName = BuiltinAgentName;
 
 export type AgentOverrideConfig = Partial<AgentConfig> & {
+  category?: string;
   prompt_append?: string;
+  skills?: string[];
+  tools?: Record<string, boolean>;
   variant?: string;
   fallback_models?: string | (string | import("../config/schema/fallback-models").FallbackModelObject)[];
 };

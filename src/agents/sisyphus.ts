@@ -1,6 +1,12 @@
 import type { AgentConfig } from "@opencode-ai/sdk";
 import type { AgentMode, AgentPromptMetadata } from "./types";
-import { isGptModel, isGeminiModel, isGpt5_5Model, isGptNativeSisyphusModel } from "./types";
+import {
+  isGptModel,
+  isGeminiModel,
+  isGpt5_5Model,
+  isGptNativeSisyphusModel,
+  isClaudeOpus47Model,
+} from "./types";
 import {
   buildGeminiToolMandate,
   buildGeminiDelegationOverride,
@@ -9,10 +15,12 @@ import {
   buildGeminiToolGuide,
   buildGeminiToolCallExamples,
 } from "./sisyphus/gemini";
+import { buildClaudeOpus47SisyphusPrompt } from "./sisyphus/claude-opus-4-7";
 import { buildGpt54SisyphusPrompt } from "./sisyphus/gpt-5-4";
 import { buildGpt55SisyphusPrompt } from "./sisyphus/gpt-5-5";
 import { buildTaskManagementSection } from "./sisyphus/default";
 import { getGptApplyPatchPermission } from "./gpt-apply-patch-guard";
+import { getFrontierToolSchemaPermission } from "./frontier-tool-schema-guard";
 
 const MODE: AgentMode = "primary";
 export const SISYPHUS_PROMPT_METADATA: AgentPromptMetadata = {
@@ -501,6 +509,7 @@ export function createSisyphusAgent(
       permission: {
         question: "allow",
         call_omo_agent: "deny",
+        ...getFrontierToolSchemaPermission(model),
         ...getGptApplyPatchPermission(model),
       } as AgentConfig["permission"],
       reasoningEffort: "medium",
@@ -527,9 +536,37 @@ export function createSisyphusAgent(
       permission: {
         question: "allow",
         call_omo_agent: "deny",
+        ...getFrontierToolSchemaPermission(model),
         ...getGptApplyPatchPermission(model),
       } as AgentConfig["permission"],
       reasoningEffort: "medium",
+    };
+  }
+
+  if (isClaudeOpus47Model(model)) {
+    const prompt = buildClaudeOpus47SisyphusPrompt(
+      model,
+      agents,
+      tools,
+      skills,
+      categories,
+      useTaskSystem,
+    );
+    return {
+      description:
+        "Powerful AI orchestrator. Plans obsessively with todos, assesses search complexity before exploration, delegates strategically via category+skills combinations. Uses explore for internal code (parallel-friendly), librarian for external docs. (Sisyphus - OhMyOpenCode)",
+      mode: MODE,
+      model,
+      maxTokens: 64000,
+      prompt,
+      color: "#00CED1",
+      permission: {
+        question: "allow",
+        call_omo_agent: "deny",
+        ...getFrontierToolSchemaPermission(model),
+        ...getGptApplyPatchPermission(model),
+      } as AgentConfig["permission"],
+      thinking: { type: "enabled", budgetTokens: 32000 },
     };
   }
 
@@ -567,6 +604,7 @@ export function createSisyphusAgent(
   const permission = {
     question: "allow",
     call_omo_agent: "deny",
+    ...getFrontierToolSchemaPermission(model),
     ...getGptApplyPatchPermission(model),
   } as AgentConfig["permission"];
   const base = {
