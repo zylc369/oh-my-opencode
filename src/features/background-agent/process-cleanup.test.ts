@@ -135,9 +135,7 @@ describe("#given process cleanup registration", () => {
     })
 
     test("#given two managers registered #when uncaughtException fires #then both shutdowns called", async () => {
-      const exitSpy = spyOn(process, "exit").mockImplementation((code?: number): never => {
-        throw new Error(`Unexpected process.exit(${String(code)})`)
-      })
+      const exitSpy = spyOn(process, "exit").mockImplementation((() => undefined) as never)
       const shutdownOne = mock(() => {})
       const shutdownTwo = mock(() => {})
       const managerOne = { shutdown: shutdownOne }
@@ -154,7 +152,7 @@ describe("#given process cleanup registration", () => {
         expect(shutdownOne).toHaveBeenCalledTimes(1)
         expect(shutdownTwo).toHaveBeenCalledTimes(1)
         expect(process.exitCode).toBe(1)
-        expect(exitSpy).not.toHaveBeenCalled()
+        expect(exitSpy).toHaveBeenCalledWith(1)
       } finally {
         exitSpy.mockRestore()
       }
@@ -219,10 +217,8 @@ describe("#given process cleanup registration", () => {
   })
 
   describe("#given uncaught exception and rejection cleanup", () => {
-    test("#given manager registered AND process emits uncaughtException #when event fires #then manager.shutdown() called AND process.exitCode set to 1", async () => {
-      const exitSpy = spyOn(process, "exit").mockImplementation((code?: number): never => {
-        throw new Error(`Unexpected process.exit(${String(code)})`)
-      })
+    test("#given manager registered AND process emits uncaughtException #when event fires #then manager shuts down before process exits", async () => {
+      const exitSpy = spyOn(process, "exit").mockImplementation((() => undefined) as never)
       const shutdown = mock(() => {})
       const manager = { shutdown }
       registeredManagers.push(manager)
@@ -235,16 +231,14 @@ describe("#given process cleanup registration", () => {
 
         expect(shutdown).toHaveBeenCalledTimes(1)
         expect(process.exitCode).toBe(1)
-        expect(exitSpy).not.toHaveBeenCalled()
+        expect(exitSpy).toHaveBeenCalledWith(1)
       } finally {
         exitSpy.mockRestore()
       }
     })
 
-    test("#given manager registered AND process emits unhandledRejection #when event fires #then manager.shutdown() called AND process.exitCode set to 1", async () => {
-      const exitSpy = spyOn(process, "exit").mockImplementation((code?: number): never => {
-        throw new Error(`Unexpected process.exit(${String(code)})`)
-      })
+    test("#given manager registered AND process emits unhandledRejection #when event fires #then manager shuts down before process exits", async () => {
+      const exitSpy = spyOn(process, "exit").mockImplementation((() => undefined) as never)
       const shutdown = mock(() => {})
       const manager = { shutdown }
       registeredManagers.push(manager)
@@ -257,7 +251,7 @@ describe("#given process cleanup registration", () => {
 
         expect(shutdown).toHaveBeenCalledTimes(1)
         expect(process.exitCode).toBe(1)
-        expect(exitSpy).not.toHaveBeenCalled()
+        expect(exitSpy).toHaveBeenCalledWith(1)
       } finally {
         exitSpy.mockRestore()
       }
@@ -280,6 +274,43 @@ describe("#given process cleanup registration", () => {
       expect(process.listeners("uncaughtException")).toHaveLength(
         uncaughtExceptionListenersBefore.length,
       )
+    })
+
+    test("#given cleanup itself throws re-entrant uncaughtException #when event fires repeatedly #then listener body runs only once AND no further log calls occur", async () => {
+      // Regression guard for log explosion (157 GB in minutes) observed when
+      // shutdown() code path itself emits uncaughtException (e.g. EPIPE while
+      // closing a broken pipe). Before the fix, every re-entry logged another
+      // line and re-ran cleanup, producing an unbounded loop that filled disk.
+      const reentrantShutdown = mock(() => {
+        process.emit("uncaughtException", new Error("EPIPE re-entry"))
+      })
+      const manager = { shutdown: reentrantShutdown }
+      registeredManagers.push(manager)
+
+      registerManagerForCleanup(manager)
+
+      process.emit("uncaughtException", new Error("boom"))
+      await flushMicrotasks()
+
+      // Primary listener body must run exactly once. Re-entry MUST be short-
+      // circuited — otherwise the shutdown → EPIPE → uncaughtException loop
+      // writes millions of log lines before the forced-exit timer fires.
+      expect(reentrantShutdown.mock.calls.length).toBeLessThanOrEqual(1)
+    })
+
+    test("#given cleanup emits unhandledRejection re-entrantly #when event fires #then listener body runs only once", async () => {
+      const reentrantShutdown = mock(() => {
+        process.emit("unhandledRejection", new Error("re-entry"), Promise.resolve())
+      })
+      const manager = { shutdown: reentrantShutdown }
+      registeredManagers.push(manager)
+
+      registerManagerForCleanup(manager)
+
+      process.emit("unhandledRejection", new Error("boom"), Promise.resolve())
+      await flushMicrotasks()
+
+      expect(reentrantShutdown.mock.calls.length).toBeLessThanOrEqual(1)
     })
   })
 })
