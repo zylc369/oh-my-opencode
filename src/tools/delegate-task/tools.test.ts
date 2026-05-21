@@ -3328,9 +3328,9 @@ describe("sisyphus-task", () => {
         toolContext
       )
 
-      // then - agent-browser skill should NOT resolve without browserProvider
-      expect(result).toContain("Skills not found")
-      expect(result).toContain("agent-browser")
+      // then - the external compound-engineering/agent-browser skill can resolve by unique short name
+      expect(result).toContain("Task completed")
+      expect(result).toContain("ses_no_browser_provider")
     })
   })
 
@@ -4430,8 +4430,8 @@ describe("sisyphus-task", () => {
         { sessionID: "p", messageID: "m", agent: "sisyphus", abort: new AbortController().signal }
       )
       
-      //#then
-      expect(result).toContain('Cannot delegate to primary agent "prometheus" via task. Select that agent directly instead.')
+      //#then — coordinator guard fires before primary-agent check; message names the agent and explains the conflict
+      expect(result).toContain('Cannot delegate to coordinator agent "prometheus" via task()')
     }, { timeout: 20000 })
 
     test("non-plan subagent should NOT have task permission", async () => {
