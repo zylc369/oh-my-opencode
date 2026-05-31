@@ -3,8 +3,10 @@ import { join, resolve } from "node:path"
 import { existsSync } from "node:fs"
 import { mkdir, writeFile } from "node:fs/promises"
 import { installCachedPlugin, linkCachedPluginBins, pruneMarketplaceCache, pruneMarketplacePluginCaches } from "./codex-cache"
+import { shouldBuildSourcePackages } from "./codex-package-layout"
 import { updateCodexConfig } from "./codex-config-toml"
 import { trustedHookStatesForPlugin } from "./codex-hook-trust"
+import { prepareGitBashForInstall, resolveGitBashForCurrentProcess } from "./git-bash"
 import { linkCachedPluginAgents } from "./link-cached-plugin-agents"
 import { readMarketplace, readPluginManifest, resolvePluginSource, validatePathSegment } from "./codex-marketplace"
 import { writeInstalledMarketplaceSnapshot, type MarketplaceSnapshotPluginSource } from "./codex-marketplace-snapshot"
@@ -14,11 +16,27 @@ import type { CodexInstallOptions, CodexInstallResult, CodexMarketplaceSource, I
 const SISYPHUS_LEGACY_CACHE_MARKETPLACES = ["lazycodex", "code-yeongyu-codex-plugins"] as const
 
 export async function runCodexInstaller(options: CodexInstallOptions = {}): Promise<CodexInstallResult> {
-  const repoRoot = resolve(options.repoRoot ?? findRepoRoot({ importerDir: import.meta.dir, env: process.env }))
-  const codexHome = resolve(options.codexHome ?? process.env.CODEX_HOME ?? join(homedir(), ".codex"))
-  const binDir = resolveCodexInstallerBinDir({ binDir: options.binDir, codexHome, env: process.env })
+  const env = options.env ?? process.env
+  const platform = options.platform ?? process.platform
+  const repoRoot = resolve(options.repoRoot ?? findRepoRoot({ importerDir: import.meta.dir, env }))
+  const codexHome = resolve(options.codexHome ?? env.CODEX_HOME ?? join(homedir(), ".codex"))
+  const binDir = resolveCodexInstallerBinDir({ binDir: options.binDir, codexHome, env })
   const runCommand = options.runCommand ?? defaultRunCommand
   const log = options.log ?? (() => undefined)
+  const buildSource = await shouldBuildSourcePackages(repoRoot)
+
+  const gitBashResolution = await prepareGitBashForInstall({
+    platform,
+    env,
+    cwd: repoRoot,
+    runCommand,
+    resolveGitBash: platform === "win32"
+      ? (options.gitBashResolver ?? (() => resolveGitBashForCurrentProcess({ platform, env })))
+      : undefined,
+  })
+  if (!gitBashResolution.found) {
+    throw new Error(gitBashResolution.installHint)
+  }
 
   const codexPackageRoot = join(repoRoot, "packages", "omo-codex")
   const marketplace = await readMarketplace(repoRoot, {
@@ -42,6 +60,7 @@ export async function runCodexInstaller(options: CodexInstallOptions = {}): Prom
     log(`Building ${entry.name}@${version}`)
 
     const plugin = await installCachedPlugin({
+      buildSource,
       codexHome,
       marketplaceName: marketplace.name,
       name: entry.name,
@@ -50,7 +69,7 @@ export async function runCodexInstaller(options: CodexInstallOptions = {}): Prom
       version,
     })
 
-    const links = await linkCachedPluginBins({ binDir, pluginRoot: plugin.path })
+    const links = await linkCachedPluginBins({ binDir, pluginRoot: plugin.path, platform })
     for (const link of links) {
       log(`Linked ${link.name} -> ${link.target}`)
     }
@@ -66,7 +85,7 @@ export async function runCodexInstaller(options: CodexInstallOptions = {}): Prom
   })
   for (const plugin of installed) {
     const pluginRoot = agentSourceRoots.get(plugin.name) ?? plugin.path
-    const agentLinks = await linkCachedPluginAgents({ codexHome, pluginRoot })
+    const agentLinks = await linkCachedPluginAgents({ codexHome, pluginRoot, platform })
     for (const link of agentLinks) {
       log(`Linked agent ${link.name} -> ${link.target}`)
       const agentName = agentNameFromToml(link.name)
@@ -113,6 +132,7 @@ export async function runCodexInstaller(options: CodexInstallOptions = {}): Prom
     marketplaceName: marketplace.name,
     marketplaceSource: codexMarketplaceSource(marketplaceRoot),
     pluginNames: marketplace.plugins.map((plugin) => plugin.name),
+    platform,
     trustedHookStates,
     agentConfigs: [...agentConfigs.values()].sort((left, right) => left.name.localeCompare(right.name)),
     autonomousPermissions: options.autonomousPermissions === true,
@@ -125,6 +145,7 @@ export async function runCodexInstaller(options: CodexInstallOptions = {}): Prom
     installed,
     configPath,
     codexHome,
+    gitBashPath: gitBashResolution.path,
   }
 }
 
@@ -192,10 +213,6 @@ function legacyCacheMarketplaces(marketplaceName: string): readonly string[] {
   return marketplaceName === "sisyphuslabs" ? SISYPHUS_LEGACY_CACHE_MARKETPLACES : []
 }
 
-function codexMarketplaceSource(marketplaceRoot: string): CodexMarketplaceSource {
-  return { sourceType: "local", source: marketplaceRoot }
-}
-
 export function findRepoRootFromImporter(importerDir: string): string {
   let current = importerDir
   for (let depth = 0; depth <= 5; depth += 1) {
@@ -228,6 +245,10 @@ function isRepoRootWithCodexPlugin(repoRoot: string): boolean {
 
 function existsSyncLike(path: string): boolean {
   return existsSync(path)
+}
+
+function codexMarketplaceSource(marketplaceRoot: string): CodexMarketplaceSource {
+  return { sourceType: "local", source: marketplaceRoot }
 }
 
 async function trackCodexInstallTelemetry(): Promise<void> {

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { mkdir, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,6 +22,7 @@ import {
 	resolvePluginSource,
 	validatePathSegment,
 } from "./install/marketplace.mjs";
+import { prepareGitBashForInstall, resolveGitBashForCurrentProcess } from "./install/git-bash.mjs";
 
 const LEGACY_CODEX_PLUGIN_MARKETPLACE = ["code", "yeongyu", "codex", "plugins"].join("-");
 const SISYPHUS_LEGACY_CACHE_MARKETPLACES = ["lazycodex", LEGACY_CODEX_PLUGIN_MARKETPLACE];
@@ -45,6 +47,19 @@ export async function installMarketplaceLocally(options = {}) {
 	const platform = options.platform ?? process.platform;
 	const runCommand = options.runCommand ?? defaultRunCommand;
 	const log = options.log ?? console.log;
+	const buildSource = await shouldBuildSourcePackages(repoRoot);
+	const gitBashResolution = await prepareGitBashForInstall({
+		platform,
+		env,
+		cwd: repoRoot,
+		runCommand,
+		resolveGitBash: platform === "win32"
+			? (options.gitBashResolver ?? (() => resolveGitBashForCurrentProcess({ platform, env })))
+			: undefined,
+	});
+	if (!gitBashResolution.found) {
+		throw new Error(gitBashResolution.installHint);
+	}
 	const codexPackageRoot = join(repoRoot, "packages", "omo-codex");
 	const marketplace = await readMarketplace(repoRoot, {
 		marketplacePath: join(codexPackageRoot, "marketplace.json"),
@@ -66,6 +81,7 @@ export async function installMarketplaceLocally(options = {}) {
 
 		log(`Building ${entry.name}@${version}`);
 		const plugin = await installCachedPlugin({
+			buildSource,
 			codexHome,
 			marketplaceName: marketplace.name,
 			name: entry.name,
@@ -120,6 +136,7 @@ export async function installMarketplaceLocally(options = {}) {
 		marketplaceName: marketplace.name,
 		marketplaceSource: { sourceType: "local", source: marketplaceRoot },
 		pluginNames,
+		platform,
 		trustedHookStates,
 		agentConfigs: [...agentConfigs.values()].sort((left, right) => left.name.localeCompare(right.name)),
 	});
@@ -128,7 +145,7 @@ export async function installMarketplaceLocally(options = {}) {
 		log(`Installed ${plugin.name}@${marketplace.name} -> ${plugin.path}`);
 	}
 
-	return { marketplaceName: marketplace.name, installed };
+	return { marketplaceName: marketplace.name, installed, gitBashPath: gitBashResolution.path };
 }
 
 function agentNameFromToml(fileName) {
@@ -175,6 +192,14 @@ function nonEmptyEnvValue(env, key) {
 
 function legacyCacheMarketplaces(marketplaceName) {
 	return marketplaceName === "sisyphuslabs" ? SISYPHUS_LEGACY_CACHE_MARKETPLACES : [];
+}
+
+async function shouldBuildSourcePackages(repoRoot) {
+	if (existsSync(join(repoRoot, "src", "index.ts"))) return true;
+	const packageJsonPath = join(repoRoot, "package.json");
+	if (!existsSync(packageJsonPath)) return true;
+	const packageJson = JSON.parse(await readFile(packageJsonPath, "utf8"));
+	return !["@code-yeongyu/lazycodex", "lazycodex", "oh-my-opencode", "oh-my-openagent"].includes(packageJson?.name);
 }
 
 async function main() {

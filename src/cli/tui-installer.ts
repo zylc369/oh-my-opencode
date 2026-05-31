@@ -13,7 +13,7 @@ import { detectedToInitialValues, formatConfigSummary, SYMBOLS } from "./install
 import { getUnsupportedOpenCodeVersionMessage } from "./minimum-opencode-version"
 import { promptInstallConfig, promptInstallPlatform } from "./tui-install-prompts"
 import { runCodexInstaller } from "./install-codex"
-import { STAR_REPOSITORIES, formatGitHubStarCommand } from "./star-request"
+import { starGitHubRepositories } from "./star-request"
 
 export async function runTuiInstaller(args: InstallArgs, version: string): Promise<number> {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
@@ -96,14 +96,22 @@ export async function runTuiInstaller(args: InstallArgs, version: string): Promi
     spinner.stop(`Config written to ${color.cyan(omoResult.configPath)}`)
   }
 
-  if (!config.hasClaude) {
+  if (config.hasOpenCode && !config.hasClaude) {
     p.log.info(
       `${color.bold("Note:")} Sisyphus agent performs best with Claude Opus 4.5+.\n` +
         `Other models work but may have reduced orchestration quality.`,
     )
   }
 
-  if (!config.hasClaude && !config.hasOpenAI && !config.hasGemini && !config.hasCopilot && !config.hasOpencodeZen && !config.hasVercelAiGateway) {
+  if (
+    config.hasOpenCode &&
+    !config.hasClaude &&
+    !config.hasOpenAI &&
+    !config.hasGemini &&
+    !config.hasCopilot &&
+    !config.hasOpencodeZen &&
+    !config.hasVercelAiGateway
+  ) {
     p.log.warn("No model providers configured. Using opencode/big-pickle as fallback.")
   }
 
@@ -140,9 +148,20 @@ export async function runTuiInstaller(args: InstallArgs, version: string): Promi
     "The Magic Word",
   )
 
-  p.log.message(`${color.yellow("★")} If you found this helpful, consider starring the repo!`)
-  for (const repository of STAR_REPOSITORIES) {
-    p.log.message(`  ${color.dim(formatGitHubStarCommand(repository))}`)
+  const shouldStar = await p.confirm({
+    message: "Star the repos on GitHub?",
+    initialValue: false,
+  })
+  if (!p.isCancel(shouldStar) && shouldStar) {
+    spinner.start("Starring GitHub repositories")
+    const results = await starGitHubRepositories()
+    const failed = results.filter((result) => !result.ok)
+    if (failed.length === 0) {
+      spinner.stop("GitHub repositories starred")
+    } else {
+      spinner.stop("Could not star every repository")
+      p.log.warn("Make sure GitHub CLI is installed and authenticated.")
+    }
   }
 
   p.outro(color.green("oMoMoMoMo... Enjoy!"))
