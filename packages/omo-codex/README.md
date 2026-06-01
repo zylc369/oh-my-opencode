@@ -28,17 +28,18 @@ Codex harness adapter for **oh-my-openagent**. Brings the OMO experience (rules 
 End users invoke through the omodex CLI. This package is the **Light edition** of omo — install it directly with:
 
 ```bash
-bunx omo install --platform=codex
-# or via the shortcut alias (same compiled CLI, defaults --platform=codex):
-bunx lazycodex-ai install
-# or the longer package names:
-bunx oh-my-opencode install --platform=codex
-bunx oh-my-openagent install --platform=codex
+npx lazycodex-ai install
+# non-interactive recommended mode:
+npx lazycodex-ai install --no-tui --codex-autonomous
 ```
 
 To install **both** the Ultimate edition (OpenCode plugin) and the Light edition (this package) at once, use `--platform=both`.
 
 The installer copies the built plugin into `~/.codex/plugins/cache/sisyphuslabs/omo/<version>/`, writes stable agent TOML links through `~/.codex/.tmp/marketplaces/sisyphuslabs/plugins/omo/`, enables `omo@sisyphuslabs` in `~/.codex/config.toml`, and registers the `sisyphuslabs` marketplace from the local built cache. `lazycodex-ai` is the npm/bin alias and `lazycodex` is the marketplace repository; the marketplace identity remains `sisyphuslabs`.
+
+To remove managed Codex Light state, run `npx lazycodex-ai cleanup`. The command removes managed `sisyphuslabs` cache/marketplace directories, strips OMO marketplace/plugin/hook-state config blocks with a backup, removes installed agent TOML links from the manifest, and repairs the known project-local legacy `.codex/config.toml` conflict while leaving `.codex` / `.omx` project files in place.
+
+The Codex install also registers a Context7 documentation MCP in `~/.codex/config.toml` with a placeholder API key (`YOUR_API_KEY`). Replace it with your own Context7 API key to enable the docs MCP, or delete the `[mcp_servers.context7]` block if you do not want it.
 
 Native Windows installs prepare Git Bash before the installer mutates `~/.codex/`. If `bash.exe` is not already discoverable, the installer first tries the same best-effort install command shown here, then resolves Git Bash again:
 
@@ -69,7 +70,7 @@ Anonymous telemetry uses the same PostHog project as oh-my-openagent but emits t
 
 | Source | Reason | Trigger |
 |--------|--------|---------|
-| `install` | `install_completed` | `bunx omo install --platform=codex` or `--platform=both` finishes (handled by `src/cli/install-codex/install-codex.ts`) |
+| `install` | `install_completed` | `npx lazycodex-ai install` or `--platform=both` finishes (handled by `src/cli/install-codex/install-codex.ts`) |
 | `plugin` | `session_start` | Codex plugin `SessionStart` hook fires (handled by `plugin/components/telemetry/`) |
 
 Both sources share the same SHA256-hashed installation identifier (`sha256("omo-codex:" + hostname)`), suppress PostHog person profiles, and write the daily dedup state to `~/.local/share/omo-codex/posthog-activity.json`.
