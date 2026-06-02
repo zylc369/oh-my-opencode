@@ -15,7 +15,7 @@ function sliceWorkflowSection(workflow: string, startMarker: string, endMarker: 
 }
 
 describe("LazyCodex publish workflow", () => {
-  test("publishes the LazyCodex npm alias on every release while keeping marketplace sync explicit", () => {
+  test("publishes the LazyCodex npm alias and syncs the marketplace on every release", () => {
     // #given
     const workflow = readFileSync(publishWorkflowPath, "utf8")
 
@@ -23,9 +23,9 @@ describe("LazyCodex publish workflow", () => {
     const keepsCodexPluginVersionIndependent =
       !workflow.includes("jq --arg v \"$VERSION\" '.version = $v' packages/omo-codex/plugin/.codex-plugin/plugin.json") &&
       !workflow.includes("jq --arg v \"$VERSION\" '.version = $v' packages/omo-codex/plugin/package.json")
-    const flagDefaultsOff = workflow.includes("sync_lazycodex_marketplace:") &&
+    const marketplaceSyncDefaultsOn = workflow.includes("sync_lazycodex_marketplace:") &&
       workflow.includes('description: "Sync the LazyCodex Codex marketplace repository"') &&
-      workflow.includes("default: false")
+      workflow.includes("default: true")
     const publishAliasDefaultsOn = workflow.includes("publish_lazycodex:") &&
       workflow.includes('description: "Publish the lazycodex-ai npm alias"') &&
       workflow.includes("default: true")
@@ -51,8 +51,8 @@ describe("LazyCodex publish workflow", () => {
       publishLazycodexStep.includes("if: inputs.publish_lazycodex == true && steps.check-lazycodex.outputs.skip != 'true'") &&
       publishLazycodexStep.includes("npm publish --access public --provenance --tag latest --loglevel verbose") &&
       !publishLazycodexStep.includes("continue-on-error: true")
-    const gatesLazycodexMarketplaceSync = workflow.includes("name: Sync LazyCodex Codex marketplace") &&
-      workflow.includes("if: inputs.sync_lazycodex_marketplace == true")
+    const syncsLazycodexMarketplaceByDefault = workflow.includes("name: Sync LazyCodex Codex marketplace") &&
+      workflow.includes("if: inputs.sync_lazycodex_marketplace != false")
     const tokenRequirementBeforePublish = workflow.indexOf("name: Require LazyCodex sync token") <
       workflow.indexOf("publish-main:")
     const requiresLazycodexSyncToken = workflow.includes("LAZYCODEX_SYNC_TOKEN: ${{ secrets.LAZYCODEX_SYNC_TOKEN }}") &&
@@ -61,7 +61,7 @@ describe("LazyCodex publish workflow", () => {
 
     // #then
     expect(keepsCodexPluginVersionIndependent, "LazyCodex plugin metadata must keep its own 0.1.0 version").toBe(true)
-    expect(flagDefaultsOff, "LazyCodex marketplace sync must default to disabled").toBe(true)
+    expect(marketplaceSyncDefaultsOn, "LazyCodex marketplace sync must default to enabled").toBe(true)
     expect(publishAliasDefaultsOn, "LazyCodex npm alias publish must stay enabled by default").toBe(true)
     expect(syncsLazycodexMarketplace, "release must sync the LazyCodex marketplace bundle").toBe(true)
     expect(syncBuildsMcpDists, "release must build bundled MCP dists before LazyCodex marketplace sync").toBe(true)
@@ -70,7 +70,7 @@ describe("LazyCodex publish workflow", () => {
     expect(pushesLazycodexMarketplace, "release must target the LazyCodex repository").toBe(true)
     expect(alwaysChecksLazycodexNpm, "release must always check lazycodex using the release version").toBe(true)
     expect(publishesLazycodexNpm, "lazycodex npm publish must be part of the normal release, tag stable releases as latest, and fail loudly").toBe(true)
-    expect(gatesLazycodexMarketplaceSync, "LazyCodex marketplace push must require sync_lazycodex_marketplace=true").toBe(true)
+    expect(syncsLazycodexMarketplaceByDefault, "LazyCodex marketplace push must run by default and be explicitly skippable").toBe(true)
     expect(requiresLazycodexSyncToken, "release must require a cross-repo token for LazyCodex push").toBe(true)
   })
 
@@ -205,5 +205,58 @@ describe("LazyCodex publish workflow", () => {
     expect(installsPluginDepsBeforeBuild, "publish-main must install nested Codex plugin deps before building the components").toBe(true)
     expect(buildsBeforeLazycodexPublish, "Codex plugin components must be built before the lazycodex-ai npm publish step").toBe(true)
     expect(buildStepGatedByPublishLazycodex, "plugin component build must only run when publishing the lazycodex-ai alias").toBe(true)
+  })
+
+  test("builds bundled MCP dists before the release marketplace sync builds the Codex plugin", () => {
+    // #given
+    const workflow = readFileSync(publishWorkflowPath, "utf8")
+    const syncStep = sliceWorkflowSection(
+      workflow,
+      "      - name: Sync LazyCodex Codex marketplace",
+      "      - name: Create GitHub release",
+    )
+
+    // #when
+    const astGrepBuildIndex = syncStep.indexOf("bun run build:ast-grep-mcp")
+    const lspBuildIndex = syncStep.indexOf("bun run build:lsp-tools-mcp")
+    const codexPluginBuildIndex = syncStep.indexOf("bun run --cwd packages/omo-codex/plugin build")
+    const syncScriptIndex = syncStep.indexOf("bun run script/sync-lazycodex-marketplace.ts")
+    const buildsMcpDistsBeforeCodexPlugin =
+      astGrepBuildIndex >= 0 &&
+      lspBuildIndex >= 0 &&
+      codexPluginBuildIndex >= 0 &&
+      astGrepBuildIndex < codexPluginBuildIndex &&
+      lspBuildIndex < codexPluginBuildIndex
+    const buildsCodexPluginBeforeMarketplaceSync =
+      codexPluginBuildIndex >= 0 && syncScriptIndex > codexPluginBuildIndex
+
+    // #then
+    expect(
+      buildsMcpDistsBeforeCodexPlugin,
+      "release marketplace sync must build bundled MCP dists before the Codex plugin build consumes them",
+    ).toBe(true)
+    expect(buildsCodexPluginBeforeMarketplaceSync, "release marketplace sync must build the Codex plugin before copying it").toBe(true)
+  })
+
+  test("initializes the LSP tools submodule before the release marketplace sync builds it", () => {
+    // #given
+    const workflow = readFileSync(publishWorkflowPath, "utf8")
+    const syncStep = sliceWorkflowSection(
+      workflow,
+      "      - name: Sync LazyCodex Codex marketplace",
+      "      - name: Create GitHub release",
+    )
+
+    // #when
+    const submoduleUpdateIndex = syncStep.indexOf("git submodule update --init --recursive packages/lsp-tools-mcp")
+    const lspBuildIndex = syncStep.indexOf("bun run build:lsp-tools-mcp")
+    const initializesSubmoduleBeforeBuild =
+      submoduleUpdateIndex >= 0 && lspBuildIndex > submoduleUpdateIndex
+
+    // #then
+    expect(
+      initializesSubmoduleBeforeBuild,
+      "release marketplace sync must initialize packages/lsp-tools-mcp before npm ci runs inside it",
+    ).toBe(true)
   })
 })
