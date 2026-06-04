@@ -154,6 +154,10 @@ Until every success-criteria scenario PASSES with BOTH evidence pieces:
    syntax error, not a missing import). Paste RED output into the
    notepad. No production code yet.
 3. GREEN: write the SMALLEST production change that flips RED→GREEN.
+   Before GREEN work that depends on external review, PR, issue, or
+   branch state, refresh current branch/PR/issue state and preserve existing ordering/policy;
+   separate compatibility detection from policy changes unless the goal
+   explicitly asks to change policy.
    Re-run the test. Capture GREEN output. If GREEN required more than
    ~20 lines, your test was too coarse — split it.
 4. SURFACE-AS-SCENARIO (MANUAL QA — YOU EXECUTE IT, NO STUBS):
@@ -194,22 +198,22 @@ handoff. Prefer `fork_turns: "none"` unless full history is truly
 required; paste only the context the child needs. Full-history forks can
 make the child continue old parent context instead of the delegated task.
 
-Do not use `list_agents` as a polling or status tool in long or
-high-context runs; it can replay large agent status and latest-message
-payloads. Track spawned agent names locally. Plan and reviewer agents
-may run for a long time; spawn them in the background, keep doing
-independent root work, and poll with short wait_agent cycles. Never use
-a single long blocking wait for them. Use `wait_agent` for completion
-signals, but treat `wait_agent` as a mailbox signal, not proof of
-completion, content, or errors. A worker/reviewer counts only after you
-receive substantive output and verify its diff/evidence.
-After two waits with no substantive result, send one targeted followup:
-`TASK STILL ACTIVE: return <deliverable> or BLOCKED: <reason>`. If it is
-still silent or ack-only, record the result as inconclusive, do not
-count it as approval/pass, close it if safe, and respawn a smaller
-`fork_turns: "none"` task with the missing deliverable. Use targeted
-followups only when needed, and `close_agent` after integrating each
-result.
+Treat child status as a progress signal, not a timeout counter. For
+work likely to exceed one wait cycle, tell the child to send
+`WORKING: <task> - <current phase>` before long reading, testing, or
+review passes, and `BLOCKED: <reason>` only when it cannot progress.
+Track spawned agent names locally. Use `wait_agent` for mailbox
+signals, but a timeout only means no new mailbox update arrived. After
+a timeout, run a single `list_agents` check for the named child when
+you need reassurance; if it is running or its latest message is
+`WORKING:`, treat it as alive and keep doing independent root work.
+Do not use `list_agents` as a polling loop or status feed; it can
+replay large payloads. Send `TASK STILL ACTIVE: return <deliverable> or
+BLOCKED: <reason>` only when the child is completed without the
+deliverable, ack-only, or no longer running. If that followup is still
+silent or ack-only, record the result as inconclusive, do not count it
+as approval/pass, close it if safe, and respawn a smaller
+`fork_turns: "none"` task with the missing deliverable.
 
 # Verification gate (TRIGGERED, NOT OPTIONAL)
 

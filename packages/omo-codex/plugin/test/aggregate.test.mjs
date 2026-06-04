@@ -5,11 +5,20 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
+const repoRoot = join(root, "..", "..", "..");
 const mcpPackageManifestPaths = ["../../lsp-tools-mcp/package.json", "../../ast-grep-mcp/package.json", "../../git-bash-mcp/package.json"];
 const mcpPackageManifestExists = await Promise.all(mcpPackageManifestPaths.map(exists));
 
 async function readJson(relativePath) {
 	return JSON.parse(await readFile(join(root, relativePath), "utf8"));
+}
+
+async function readRepoJson(relativePath) {
+	return JSON.parse(await readFile(join(repoRoot, relativePath), "utf8"));
+}
+
+async function readPluginVersion() {
+	return (await readJson(".codex-plugin/plugin.json")).version;
 }
 
 async function exists(relativePath) {
@@ -138,6 +147,7 @@ test("#given isolated components #when hooks are inspected #then commands stay i
 test("#given aggregate PostCompact hooks #when hooks are inspected #then LSP diagnostics cache reset is registered", async () => {
 	// given
 	const hooks = await readJson("hooks/hooks.json");
+	const aggregateVersion = await readPluginVersion();
 
 	// when
 	const lspPostCompactHooks = collectCommandHooks(hooks, "hooks/hooks.json").filter(
@@ -148,7 +158,7 @@ test("#given aggregate PostCompact hooks #when hooks are inspected #then LSP dia
 
 	// then
 	assert.equal(lspPostCompactHooks.length, 1);
-	assert.equal(lspPostCompactHooks[0]?.handler.statusMessage, "LazyCodex(0.1.0): Resetting LSP Diagnostics Cache");
+	assert.equal(lspPostCompactHooks[0]?.handler.statusMessage, `LazyCodex(${aggregateVersion}): Resetting LSP Diagnostics Cache`);
 });
 
 test("#given aggregate hook commands #when inspected #then every command exposes a Codex status message", async () => {
@@ -505,7 +515,7 @@ test("#given long-running orchestration prompts #when waiting on child agents #t
 	const missingLivenessGuidance = [];
 	for (const promptPath of promptFiles) {
 		const content = await readFile(promptPath, "utf8");
-		if (!content.includes("active subagent count") || !content.includes("last heartbeat")) {
+		if (!/active\s+subagent count/.test(content) || !/latest `WORKING:` phase/.test(content)) {
 			missingLivenessGuidance.push(`${basename(dirname(promptPath))}/${basename(promptPath)}`);
 		}
 	}
