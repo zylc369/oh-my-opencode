@@ -7,6 +7,7 @@ import {
   isGptNativeSisyphusModel,
   isClaudeOpus47Model,
   isKimiK2Model,
+  buildClaudeThinkingConfig,
 } from "./types";
 import {
   buildGeminiToolMandate,
@@ -46,6 +47,7 @@ import {
   buildDelegationTable,
   buildCategorySkillsDelegationGuide,
   buildOracleSection,
+  buildConsensusSection,
   buildHardBlocksSection,
   buildAntiPatternsSection,
   buildParallelDelegationSection,
@@ -76,6 +78,7 @@ function buildDynamicSisyphusPrompt(
   );
   const delegationTable = buildDelegationTable(availableAgents);
   const oracleSection = buildOracleSection(availableAgents);
+  const consensusSection = buildConsensusSection(availableTools);
   const hardBlocks = buildHardBlocksSection();
   const antiPatterns = buildAntiPatternsSection();
   const parallelDelegationSection = buildParallelDelegationSection(model, availableCategories);
@@ -423,6 +426,8 @@ If verification fails:
 
 ${oracleSection}
 
+${consensusSection}
+
 ${taskManagementSection}
 
 <Tone_and_Style>
@@ -598,7 +603,7 @@ export function createSisyphusAgent(
         ...getFrontierToolSchemaPermission(model),
         ...getGptApplyPatchPermission(model),
       } as AgentConfig["permission"],
-      thinking: { type: "enabled", budgetTokens: 32000 },
+      ...buildClaudeThinkingConfig(model),
     };
   }
 
@@ -654,6 +659,6 @@ export function createSisyphusAgent(
     return { ...base, reasoningEffort: "medium" };
   }
 
-  return { ...base, thinking: { type: "enabled", budgetTokens: 32000 } };
+  return { ...base, ...buildClaudeThinkingConfig(model) };
 }
 createSisyphusAgent.mode = MODE;
