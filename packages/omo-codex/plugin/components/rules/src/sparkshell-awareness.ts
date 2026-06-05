@@ -17,22 +17,28 @@ export function isCodexAppServerActive(env: RuntimeEnv = process.env): boolean {
 	);
 }
 
+function isSparkShellAppServerConfigured(env: RuntimeEnv = process.env): boolean {
+	const codexSocketPath = env["CODEX_APP_SERVER_SOCKET"]?.trim() ?? "";
+	const omoSocketPath = env["OMO_SPARKSHELL_APP_SERVER_SOCKET"]?.trim() ?? "";
+	return codexSocketPath.length > 0 || omoSocketPath.length > 0;
+}
+
 export function getSparkShellRuntimeAwareness(env: RuntimeEnv = process.env): string {
 	const override = env["OMO_SPARKSHELL_AWARENESS"] ?? env["LAZYCODEX_SPARKSHELL_AWARENESS"];
 	if (isFalsy(override)) {
 		return "";
 	}
-	if (!isTruthy(override) && !isCodexAppServerActive(env)) {
+	if (!isTruthy(override) && !isCodexAppServerActive(env) && !isSparkShellAppServerConfigured(env)) {
 		return "";
 	}
 
 	return [
 		SPARKSHELL_AWARENESS_MARKER,
 		"",
-		"- Codex app server context is active, so Sparkshell is available for shell-native inspection and bounded verification.",
-		"- Use `omo sparkshell <command>` for direct argv execution. Use `omo sparkshell --shell '<command>'` only when shell metacharacters are required.",
-		"- Use `omo sparkshell --tmux-pane <pane-id> --tail-lines 400` to summarize a tmux pane. Tail lines must stay between 100 and 1000.",
-		"- Fallback boundaries are visible in output. `OMO_SPARKSHELL_BIN` selects a native sidecar path.",
+		"- Prefer `omo sparkshell <command>` for repo inspection, CLI smoke tests, git/history checks, and bounded verification before falling back to raw shell commands.",
+		"- Use `omo sparkshell --shell '<command>'` only when shell metacharacters are required.",
+		"- Use `omo sparkshell --tmux-pane <pane-id> --tail-lines 400` to inspect an existing tmux pane. Tail lines must stay between 100 and 1000.",
+		"- When no native sidecar or appserver is available, Sparkshell silently falls back to raw command execution. `OMO_SPARKSHELL_BIN` selects a native sidecar path.",
 	].join("\n");
 }
 

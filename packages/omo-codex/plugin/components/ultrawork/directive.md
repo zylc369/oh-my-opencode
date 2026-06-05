@@ -128,23 +128,62 @@ Started: <ISO timestamp>
 <patterns / pitfalls / principles to remember next turn>
 ```
 
-Update `## Now` and `## Todo` on every status change. Append findings
-and learnings the moment they surface. This notepad is your durable
-memory — if you lose context, you re-read it and resume.
+Append to the notepad after EVERY atomic action, not only on status
+changes: each finding, decision, command run, RED/GREEN capture, and QA
+artifact path goes in the moment it happens. Update `## Now` and
+`## Todo` on every transition. Append-only — never rewrite. This notepad
+is your durable memory and it OUTLIVES the context window. After any
+compaction or context loss (a `Context compacted` notice, a summarized
+history, or you no longer see your own earlier steps), STOP and re-read
+the WHOLE notepad FIRST — `omo sparkshell cat "$NOTE"`, or read the path
+directly — before any other action, then resume from `## Now`. Recover
+state from the notepad; do not re-plan from scratch or re-run completed
+steps.
 
-## 3. Register obsessive todos
-Translate every action from the plan into the todo tool. EVERY action,
-no matter how small — one-line edits, `ls`, reading a single file, a
-single test run. If you will do it, it is a todo. Format:
-`path: <action> for <criterion> — verify by <check>` encoding WHERE /
-WHY (which criterion it advances) / HOW / VERIFY. Exactly ONE in_progress
-at a time. Mark completed IMMEDIATELY — never batch.
+## 3. Register obsessive todos via `update_plan`
+The todo tool is Codex `update_plan` — your live, user-visible
+checklist. Translate every action from the plan into one `update_plan`
+step. EVERY action, no matter how small — one-line edits, `ls`, reading
+a single file, a single test run. If you will do it, it is a step. Keep
+steps atomic and ultra-granular: prefer many tiny steps over a few
+coarse ones; if a step needs more than one tool call, split it.
+Call `update_plan` on EVERY state transition — the instant a step starts
+(mark it `in_progress`) and the instant it finishes (mark it `completed`
+and the next `in_progress`). Exactly ONE `in_progress` at a time. Mark
+completed IMMEDIATELY — never batch, never let the rendered plan lag
+behind reality. Add newly discovered steps the moment they surface
+instead of waiting for the next pass. Step text encodes WHERE / WHY
+(which criterion it advances) / HOW / VERIFY:
+`path: <action> for <criterion> — verify by <check>`.
 
 GOOD pair (test-first, ordered):
   `foo.test.ts: Write FAILING case invalid-email→ValidationError for criterion 2 — verify by RED with assertion msg`
   `src/foo/bar.ts: Implement validateEmail() RFC-5322-lite for criterion 2 — verify by foo.test.ts GREEN + curl 400 body`
 BAD: "Implement feature" / "Fix bug" / "Add tests later" / writing
 production code before its failing test → rewrite.
+
+# Finding things (lead with these, parallel-flood the first wave)
+Never guess from memory — locate with the right tool, and re-read before
+you claim or change. Fire 3+ independent lookups in one action;
+serialize only when one output strictly feeds the next.
+- Repo-wide inspection, CLI smoke tests, git/history, bounded command
+  output → prefer `omo sparkshell <command>` before raw shell commands
+  (use `omo sparkshell --shell '<cmd>'` only when shell metacharacters
+  are required; `--tmux-pane <id> --tail-lines N` only to inspect an
+  existing pane). Sparkshell is your default lens on the tree.
+- Symbols — definitions, references, rename impact, diagnostics →
+  `lsp_goto_definition`, `lsp_find_references`, `lsp_symbols`,
+  `lsp_diagnostics`. Use the LSP, not text search, for anything
+  symbol-shaped.
+- Structural shapes — call/function/class/import patterns, codemods →
+  `ast_grep_search` with `$VAR` / `$$$` metavars.
+- Text / strings / comments / logs → `rg`. File-name discovery →
+  `glob` / `find`. Verbatim content → `read`.
+When discovery needs multiple angles or the module layout is
+unfamiliar, delegate to the `explorer` subagent (read-only codebase
+search, absolute-path results). For research that leaves the repo —
+library/API/docs/web — delegate to the `librarian` subagent. Spawn them
+`fork_turns: "none"` and keep doing root work while they run.
 
 # Execution loop (strict TDD — RED → GREEN → SURFACE → CLEAN)
 Until every success-criteria scenario PASSES with BOTH evidence pieces:

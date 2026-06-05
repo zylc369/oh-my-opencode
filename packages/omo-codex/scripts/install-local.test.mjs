@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile, readlink } from "node:fs/promises";
+import { mkdir, readFile, readlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -9,6 +9,14 @@ import { installMarketplaceLocally, resolveCodexInstallerBinDir } from "./instal
 import { makeTempDir, writeJson, writePluginAt } from "./install-test-fixtures.mjs";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
+
+function escapePosixDoubleQuoted(value) {
+	return value.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("$", "\\$").replaceAll("`", "\\`");
+}
+
+function escapeRegExp(value) {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 test("#given default CODEX_HOME #when resolving local installer bin dir without override #then preserves user local bin precedence", () => {
 	const homeDir = join(tmpdir(), "omo-codex-home-default");
@@ -36,6 +44,8 @@ test("#given custom CODEX_HOME and PATH without omo #when installing locally wit
 		plugins: [{ name: "omo", source: "./plugins/omo" }],
 	});
 	await writePluginAt(pluginRoot, "omo", "0.1.0");
+	await mkdir(join(repoRoot, "dist", "cli"), { recursive: true });
+	await writeFile(join(repoRoot, "dist", "cli", "index.js"), "#!/usr/bin/env bun\n");
 
 	const result = await installMarketplaceLocally({
 		repoRoot,
@@ -48,7 +58,12 @@ test("#given custom CODEX_HOME and PATH without omo #when installing locally wit
 	});
 
 	assert.equal(result.installed.length, 1);
-	assert.equal(await readlink(join(codexHome, "bin", "omo")), join(result.installed[0].path, "dist", "cli.js"));
+	const wrapper = await readFile(join(codexHome, "bin", "omo"), "utf8");
+	assert.match(wrapper, /OMO_GENERATED_RUNTIME_WRAPPER/);
+	assert.match(wrapper, new RegExp(escapeRegExp(escapePosixDoubleQuoted(join(repoRoot, "dist", "cli", "index.js")))));
+	assert.match(wrapper, /CODEX_HOME/);
+	assert.match(wrapper, /OMO_SPARKSHELL_APP_SERVER_SOCKET/);
+	assert.match(wrapper, /omo-ulw-loop/);
 });
 
 test("#given explicit CODEX_LOCAL_BIN_DIR #when resolving local installer bin dir #then preserves installed omo precedence", () => {
