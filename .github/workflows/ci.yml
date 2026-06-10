@@ -34,6 +34,7 @@ jobs:
 
   test:
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -65,6 +66,10 @@ jobs:
 
       - name: Build vendored lsp-daemon package
         run: npm ci && npm run build
+        working-directory: packages/lsp-daemon
+
+      - name: Run vendored lsp-daemon tests
+        run: npm test
         working-directory: packages/lsp-daemon
 
       - name: Run tests
@@ -226,7 +231,7 @@ jobs:
           test -f dist/index.d.ts || (echo "ERROR: dist/index.d.ts not found!" && exit 1)
 
       - name: Verify dist bundle tests
-        run: bun test src/shared/dist-bundle-bun-globals.test.ts src/shared/dist-bundle-prompt-content.test.ts
+        run: bun test packages/omo-opencode/src/shared/dist-bundle-bun-globals.test.ts packages/omo-opencode/src/shared/dist-bundle-prompt-content.test.ts
 
       - name: Auto-commit schema changes
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
