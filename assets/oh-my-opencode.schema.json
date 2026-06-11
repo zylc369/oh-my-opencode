@@ -55,8 +55,10 @@
           "review-work",
           "remove-ai-slops",
           "init-deep",
+          "debugging",
           "security-research",
           "security-review",
+          "visual-qa",
           "team-mode"
         ]
       }
@@ -5917,6 +5919,9 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 9007199254740991
+        },
+        "disable_live_parent_wake_routing": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false
@@ -6454,8 +6459,6 @@
             "type": "string",
             "enum": [
               "ultrawork",
-              "search",
-              "analyze",
               "team",
               "hyperplan",
               "hyperplan-ultrawork"
@@ -6468,8 +6471,6 @@
             "type": "string",
             "enum": [
               "ultrawork",
-              "search",
-              "analyze",
               "team",
               "hyperplan",
               "hyperplan-ultrawork"
