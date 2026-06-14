@@ -181,15 +181,15 @@ describe("createSisyphusJuniorAgentWithOverrides", () => {
     })
   })
 
-  describe("GPT-5.4 edit protocol", () => {
-    test("GPT-5.4 prompt prefers edit tool over apply_patch for existing files", () => {
+  describe("GPT-5.4 file-edit protocol", () => {
+    test("GPT-5.4 prompt instructs apply_patch for file edits", () => {
       // given / when
       const prompt = buildSisyphusJuniorPrompt("openai/gpt-5.4-mini", false)
 
       // then
-      expect(prompt).toContain("For existing files, use the edit tool instead of write/apply_patch.")
-      expect(prompt).toContain("Use write only when creating a new file.")
-      expect(prompt).not.toContain("Always use apply_patch for manual code edits.")
+      expect(prompt).toContain("Use `apply_patch`")
+      expect(prompt).not.toContain("Do not use `apply_patch`")
+      expect(prompt).not.toContain("use the edit tool instead of write/apply_patch")
     })
   })
 
@@ -247,6 +247,38 @@ describe("createSisyphusJuniorAgentWithOverrides", () => {
         expect(permission.task).toBe("deny")
         expect(permission.call_omo_agent).toBe("allow")
       }
+    })
+
+    test("tools override migrates boolean tools to permission (issue #5193)", () => {
+      // given
+      const override = {
+        tools: { grep: false, write: false, read: true } as Record<string, boolean>,
+      }
+      // when
+      const result = createSisyphusJuniorAgentWithOverrides(override as Parameters<typeof createSisyphusJuniorAgentWithOverrides>[0])
+      // then
+      const permission = result.permission as Record<string, string>
+      expect(permission.grep).toBe("deny")
+      expect(permission.write).toBe("deny")
+      expect(permission.read).toBe("allow")
+    })
+
+    test("permission override with MCP tool keys passes through (issue #5193)", () => {
+      // given
+      const override = {
+        permission: {
+          "mcp__context7__resolve-library-id": "allow",
+          grep: "deny",
+        } as Record<string, string>,
+      }
+      // when
+      const result = createSisyphusJuniorAgentWithOverrides(override as Parameters<typeof createSisyphusJuniorAgentWithOverrides>[0])
+      // then
+      const permission = result.permission as Record<string, string>
+      expect(permission["mcp__context7__resolve-library-id"]).toBe("allow")
+      expect(permission.grep).toBe("deny")
+      // task must remain denied (hardcoded BLOCKED_TOOLS)
+      expect(permission.task).toBe("deny")
     })
   })
 
@@ -362,8 +394,8 @@ describe("createSisyphusJuniorAgentWithOverrides", () => {
       expect(result.prompt).toContain("Scope Discipline")
       expect(result.prompt).toContain("<tool_usage_rules>")
       expect(result.prompt).toContain("Progress Updates")
-      expect(result.prompt).toContain("Do not use `apply_patch`")
-      expect(result.prompt).toContain("`edit` and `write`")
+      expect(result.prompt).toContain("Use `apply_patch`")
+      expect(result.prompt).not.toContain("Do not use `apply_patch`")
     })
 
     test("GPT 5.4 model uses GPT-5.4 specific prompt", () => {
@@ -376,8 +408,8 @@ describe("createSisyphusJuniorAgentWithOverrides", () => {
       // then
       expect(result.prompt).toContain("expert coding agent")
       expect(result.prompt).toContain("<tool_usage_rules>")
-      expect(result.prompt).toContain("Do not use `apply_patch`")
-      expect(result.prompt).toContain("`edit` and `write`")
+      expect(result.prompt).toContain("Use `apply_patch`")
+      expect(result.prompt).not.toContain("Do not use `apply_patch`")
       expect(result.prompt).not.toContain("Always use apply_patch")
     })
 
@@ -391,11 +423,11 @@ describe("createSisyphusJuniorAgentWithOverrides", () => {
       // then
       expect(result.prompt).toContain("based on GPT-5.5")
       expect(result.prompt).toContain("focused task executor")
-      expect(result.prompt).toContain("Do not use `apply_patch`")
-      expect(result.prompt).toContain("`edit` and `write`")
+      expect(result.prompt).toContain("Use `apply_patch`")
+      expect(result.prompt).not.toContain("Do not use `apply_patch`")
     })
 
-    test("GPT variants deny apply_patch while Claude variants do not", () => {
+    test("no variant force-denies apply_patch", () => {
       // given
       const gpt54Override = { model: "openai/gpt-5.4" }
       const gpt55Override = { model: "openai/gpt-5.5" }
@@ -409,9 +441,9 @@ describe("createSisyphusJuniorAgentWithOverrides", () => {
       const claudeResult = createSisyphusJuniorAgentWithOverrides(claudeOverride)
 
       // then
-      expect(gpt54Result.permission ?? {}).toHaveProperty("apply_patch", "deny")
-      expect(gpt55Result.permission ?? {}).toHaveProperty("apply_patch", "deny")
-      expect(gptGenericResult.permission ?? {}).toHaveProperty("apply_patch", "deny")
+      expect(gpt54Result.permission ?? {}).not.toHaveProperty("apply_patch")
+      expect(gpt55Result.permission ?? {}).not.toHaveProperty("apply_patch")
+      expect(gptGenericResult.permission ?? {}).not.toHaveProperty("apply_patch")
       expect(claudeResult.permission ?? {}).not.toHaveProperty("apply_patch")
     })
 
@@ -588,7 +620,7 @@ describe("buildSisyphusJuniorPrompt", () => {
     expect(prompt).toContain("expert coding agent")
     expect(prompt).toContain("Scope Discipline")
     expect(prompt).toContain("<tool_usage_rules>")
-    expect(prompt).toContain("Do not use `apply_patch`")
+    expect(prompt).toContain("Use `apply_patch`")
   })
 
   test("GPT 5.5 model uses GPT-5.5 prompt", () => {
@@ -602,7 +634,7 @@ describe("buildSisyphusJuniorPrompt", () => {
     expect(prompt).toContain("based on GPT-5.5")
     expect(prompt).toContain("focused task executor")
     expect(prompt).toContain("Manual QA Gate")
-    expect(prompt).toContain("Do not use `apply_patch`")
+    expect(prompt).toContain("Use `apply_patch`")
   })
 
   test("generic GPT model uses generic GPT prompt", () => {
@@ -617,7 +649,7 @@ describe("buildSisyphusJuniorPrompt", () => {
     expect(prompt).toContain("Scope Discipline")
     expect(prompt).toContain("<tool_usage_rules>")
     expect(prompt).toContain("Progress Updates")
-    expect(prompt).toContain("Do not use `apply_patch`")
+    expect(prompt).toContain("Use `apply_patch`")
   })
 
   test("Claude model prompt contains Claude-specific sections", () => {
