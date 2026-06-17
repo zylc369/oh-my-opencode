@@ -4,7 +4,7 @@
 import { spawn } from "node:child_process";
 import { existsSync as existsSync4, realpathSync } from "node:fs";
 import { homedir as homedir4 } from "node:os";
-import { basename, extname, join as join5, resolve as resolve2 } from "node:path";
+import { basename as basename2, extname, join as join5, resolve as resolve2 } from "node:path";
 import {
   cwd as processCwd,
   env as processEnv,
@@ -30,10 +30,40 @@ function buildCodegraphEnv(options = {}) {
   };
 }
 
+// ../../../../utils/src/codegraph/node-support.ts
+var CODEGRAPH_MIN_NODE_MAJOR = 20;
+var CODEGRAPH_BLOCKED_NODE_MAJOR = 25;
+var CODEGRAPH_UNSAFE_NODE_ENV = "CODEGRAPH_ALLOW_UNSAFE_NODE";
+var CODEGRAPH_NODE_BIN_ENV = "CODEGRAPH_NODE_BIN";
+function evaluateCodegraphNodeSupport(options = {}) {
+  const nodeVersion = options.nodeVersion ?? process.versions.node;
+  const env = options.env ?? process.env;
+  const override = (env[CODEGRAPH_UNSAFE_NODE_ENV]?.trim().length ?? 0) > 0;
+  const major = parseNodeMajor(nodeVersion);
+  if (major >= CODEGRAPH_BLOCKED_NODE_MAJOR) {
+    return { major, override, reason: "too-new", supported: override };
+  }
+  if (major < CODEGRAPH_MIN_NODE_MAJOR) {
+    return { major, override, reason: "too-old", supported: override };
+  }
+  return { major, override, supported: true };
+}
+function buildCodegraphNodeSkipHint(support) {
+  const detail = support.reason === "too-new" ? `Node ${support.major} is unsupported (>= ${CODEGRAPH_BLOCKED_NODE_MAJOR} crashes CodeGraph mid-indexing)` : `Node ${support.major} is too old (CodeGraph requires >= ${CODEGRAPH_MIN_NODE_MAJOR})`;
+  return `CodeGraph MCP skipped: ${detail}. Use Node ${CODEGRAPH_MIN_NODE_MAJOR}-${CODEGRAPH_BLOCKED_NODE_MAJOR - 1} (e.g. Node 22 LTS) or set ${CODEGRAPH_UNSAFE_NODE_ENV}=1 to override.
+`;
+}
+function parseNodeMajor(version) {
+  const normalized = version.startsWith("v") ? version.slice(1) : version;
+  const major = Number.parseInt(normalized.split(".")[0] ?? "", 10);
+  return Number.isNaN(major) ? 0 : major;
+}
+
 // ../../../../utils/src/codegraph/resolve.ts
 import { existsSync } from "node:fs";
 import { homedir as homedir2 } from "node:os";
-import { dirname, join as join3 } from "node:path";
+import { spawnSync } from "node:child_process";
+import { basename, dirname, join as join3 } from "node:path";
 import { createRequire } from "node:module";
 
 // ../../../../utils/src/runtime/which.ts
@@ -105,12 +135,68 @@ function bunWhich(commandName) {
 var CODEGRAPH_PACKAGE = "@colbymchenry/codegraph";
 var CODEGRAPH_ENV_BIN = "OMO_CODEGRAPH_BIN";
 var CODEGRAPH_LEGACY_ENV_BIN = "CODEGRAPH_BIN";
+var CODEGRAPH_NODE_CANDIDATES = ["node24", "node22", "node20", "node"];
 var requireFromHere = createRequire(import.meta.url);
 function defaultRequireResolve(specifier) {
   return requireFromHere.resolve(specifier);
 }
-function defaultNodeRuntime() {
-  return process.execPath || null;
+function defaultNodeVersion(nodePath) {
+  if (nodePath === process.execPath && isNodeExecutableName(nodePath))
+    return process.versions.node;
+  try {
+    const result = spawnSync(nodePath, ["--version"], {
+      encoding: "utf8",
+      timeout: 2000,
+      windowsHide: true
+    });
+    if (result.error !== undefined || result.status !== 0)
+      return null;
+    const version = `${result.stdout}
+${result.stderr}`.trim().split(/\s+/)[0];
+    return version === undefined || version.length === 0 ? null : version;
+  } catch (error) {
+    if (error instanceof Error)
+      return null;
+    throw error;
+  }
+}
+function isNodeExecutableName(filePath) {
+  const executable = basename(filePath).toLowerCase();
+  return executable === "node" || executable === "node.exe" || /^node\d+(\.exe)?$/.test(executable);
+}
+function looksLikePath(command) {
+  return command.includes("/") || command.includes("\\") || /^[a-zA-Z]:/.test(command);
+}
+function resolveConfiguredNodeRuntime(configured, fileExists, which) {
+  if (looksLikePath(configured))
+    return fileExists(configured) ? configured : null;
+  return which(configured);
+}
+function supportsCodegraphNodeRuntime(nodePath, env, nodeVersion) {
+  const version = nodeVersion(nodePath);
+  if (version === null)
+    return false;
+  return evaluateCodegraphNodeSupport({ env, nodeVersion: version }).supported;
+}
+function defaultNodeRuntime(env, fileExists, which, nodeVersion) {
+  const configured = env[CODEGRAPH_NODE_BIN_ENV]?.trim();
+  if (configured !== undefined && configured.length > 0) {
+    const resolved = resolveConfiguredNodeRuntime(configured, fileExists, which);
+    return resolved !== null && supportsCodegraphNodeRuntime(resolved, env, nodeVersion) ? resolved : null;
+  }
+  const candidates = [
+    ...isNodeExecutableName(process.execPath) ? [process.execPath] : [],
+    ...CODEGRAPH_NODE_CANDIDATES.map((commandName) => which(commandName)).filter((candidate) => candidate !== null)
+  ];
+  const seen = new Set;
+  for (const candidate of candidates) {
+    if (seen.has(candidate))
+      continue;
+    seen.add(candidate);
+    if (supportsCodegraphNodeRuntime(candidate, env, nodeVersion))
+      return candidate;
+  }
+  return null;
 }
 function defaultProvisionedBin(homeDir, fileExists) {
   const binaryName = process.platform === "win32" ? "codegraph.cmd" : "codegraph";
@@ -145,7 +231,8 @@ function resolveCodegraphCommand(options = {}) {
   if (configuredBin !== undefined && configuredBin.length > 0) {
     return { argsPrefix: [], command: configuredBin, exists: fileExists(configuredBin), source: "env" };
   }
-  const nodeRuntime = options.nodeRuntime ?? defaultNodeRuntime;
+  const which = options.which ?? bunWhich;
+  const nodeRuntime = options.nodeRuntime ?? (() => defaultNodeRuntime(env, fileExists, which, options.nodeVersion ?? defaultNodeVersion));
   const bundled = resolveBundledShim(options.requireResolve ?? defaultRequireResolve, fileExists);
   const runtime2 = nodeRuntime();
   if (bundled !== null && runtime2 !== null) {
@@ -155,7 +242,7 @@ function resolveCodegraphCommand(options = {}) {
   if (provisioned !== null && fileExists(provisioned)) {
     return { argsPrefix: [], command: provisioned, exists: true, source: "provisioned" };
   }
-  const pathCommand = (options.which ?? bunWhich)("codegraph");
+  const pathCommand = which("codegraph");
   return {
     argsPrefix: [],
     command: pathCommand ?? "codegraph",
@@ -1428,6 +1515,11 @@ async function runCodegraphServe(options = {}) {
     (options.stderr ?? processStderr).write(CODEGRAPH_SKIP_HINT);
     return 1;
   }
+  const nodeSupport = evaluateCodegraphNodeSupport({ env, nodeVersion: options.nodeVersion });
+  if (resolution.source !== "bundled" && resolution.source !== "env" && !nodeSupport.supported) {
+    (options.stderr ?? processStderr).write(buildCodegraphNodeSkipHint(nodeSupport));
+    return 1;
+  }
   const runProcess = options.runProcess ?? runChildProcess;
   const codegraphEnv = codegraphEnvForConfig(codegraphConfig, homeDir, options.buildEnv);
   const mergedEnv = {
@@ -1442,11 +1534,11 @@ async function runCodegraphServe(options = {}) {
 function shouldSkipResolvedCommand(resolution, commandExists) {
   if (resolution.source !== "env")
     return false;
-  if (!looksLikePath(resolution.command))
+  if (!looksLikePath2(resolution.command))
     return false;
   return !commandExists(resolution.command);
 }
-function looksLikePath(command) {
+function looksLikePath2(command) {
   return command.includes("/") || command.includes("\\");
 }
 function codegraphEnvForConfig(config, homeDir, buildEnv) {
@@ -1499,7 +1591,7 @@ function isDirectInvocation(argvPath) {
   if (argvPath === undefined)
     return false;
   const modulePath = fileURLToPath(import.meta.url);
-  const moduleName = basename(modulePath);
+  const moduleName = basename2(modulePath);
   if (moduleName !== "serve.js" && moduleName !== "serve.ts")
     return false;
   return realpathSync(resolve2(argvPath)) === realpathSync(modulePath);
