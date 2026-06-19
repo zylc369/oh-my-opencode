@@ -1595,6 +1595,9 @@ function bunWhich(commandName) {
 }
 
 // ../../utils/src/codegraph/resolve.ts
+function codegraphCommandRequiresSupportedLocalNode(resolution) {
+  return resolution.source !== "bundled" && resolution.source !== "env" && resolution.source !== "provisioned";
+}
 var CODEGRAPH_PACKAGE = "@colbymchenry/codegraph";
 var CODEGRAPH_ENV_BIN = "OMO_CODEGRAPH_BIN";
 var CODEGRAPH_LEGACY_ENV_BIN = "CODEGRAPH_BIN";
@@ -1864,7 +1867,7 @@ function finish(action, detail, logOutcome) {
 async function resolveOrProvisionCommand(deps, config, env, homeDir, nodeSupport) {
   const resolved = deps.resolveCommand({ env, homeDir, provisioned: () => provisionedBinFromInstallDir(config.install_dir) });
   if (resolved.exists) {
-    if (resolved.source !== "bundled" && resolved.source !== "env" && !nodeSupport.supported) {
+    if (codegraphCommandRequiresSupportedLocalNode(resolved) && !nodeSupport.supported) {
       return { kind: "unsupported-node" };
     }
     return { kind: "resolved", resolution: resolved };
@@ -2082,12 +2085,16 @@ async function runCodegraphServe(options = {}) {
     provisioned: () => provisionedBinFromInstallDir2(codegraphConfig.install_dir)
   };
   const resolution = options.resolve?.(resolutionOptions) ?? resolveCodegraphCommand(resolutionOptions);
+  const nodeSupport = evaluateCodegraphNodeSupport({ env, nodeVersion: options.nodeVersion });
   if (!resolution.exists || shouldSkipResolvedCommand(resolution, options.commandExists ?? existsSync7)) {
+    if (resolution.source === "path" && !nodeSupport.supported) {
+      (options.stderr ?? processStderr2).write(buildCodegraphNodeSkipHint(nodeSupport));
+      return 1;
+    }
     (options.stderr ?? processStderr2).write(CODEGRAPH_SKIP_HINT);
     return 1;
   }
-  const nodeSupport = evaluateCodegraphNodeSupport({ env, nodeVersion: options.nodeVersion });
-  if (resolution.source !== "bundled" && resolution.source !== "env" && !nodeSupport.supported) {
+  if (codegraphCommandRequiresSupportedLocalNode(resolution) && !nodeSupport.supported) {
     (options.stderr ?? processStderr2).write(buildCodegraphNodeSkipHint(nodeSupport));
     return 1;
   }
