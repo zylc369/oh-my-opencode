@@ -249,7 +249,7 @@ describe("codex-config-toml", () => {
     await writeFile(
       configPath,
       [
-        "[mcp_servers.context7]",
+        "[mcp_servers.context7] # stale npx package from old docs",
         'command = "node"',
         'args = ["/opt/context7/server.js"]',
         "startup_timeout_sec = 40",
@@ -272,6 +272,70 @@ describe("codex-config-toml", () => {
     expect(content).toContain('command = "node"')
     expect(content).toContain('args = ["/opt/context7/server.js"]')
     expect(content).toContain("startup_timeout_sec = 40")
+    expect(content).not.toContain("YOUR_API_KEY")
+  })
+
+  test("#given real Context7 API key and placeholder comment #when updating config #then preserves user server settings", async () => {
+    // given
+    const root = await mkdtemp(join(tmpdir(), "omo-codex-config-context7-real-key-"))
+    const configPath = join(root, "config.toml")
+    await writeFile(
+      configPath,
+      [
+        "[mcp_servers.context7]",
+        'command = "npx"',
+        'args = ["-y", "@upstash/context7-mcp", "--api-key", "ctx7sk_live_example"] # replace YOUR_API_KEY in docs only',
+        "startup_timeout_sec = 20",
+        "",
+      ].join("\n"),
+    )
+
+    // when
+    await updateCodexConfig({
+      configPath,
+      repoRoot: "/repo/packages/omo-codex",
+      marketplaceName: "sisyphuslabs",
+      marketplaceSource: { sourceType: "local", source: "/repo/packages/omo-codex/cache/sisyphuslabs" },
+      pluginNames: ["omo"],
+    })
+
+    // then
+    const content = await readFile(configPath, "utf8")
+    expect(content).toContain("[mcp_servers.context7]")
+    expect(content).toContain("ctx7sk_live_example")
+    expect(content).toContain("replace YOUR_API_KEY in docs only")
+    expect(content).toContain('[plugins."omo@sisyphuslabs".mcp_servers.context7]')
+  })
+
+  test("#given stale Context7 placeholder MCP server #when updating config #then removes it for the plugin MCP", async () => {
+    // given
+    const root = await mkdtemp(join(tmpdir(), "omo-codex-config-context7-placeholder-"))
+    const configPath = join(root, "config.toml")
+    await writeFile(
+      configPath,
+      [
+        "[mcp_servers.context7]",
+        'command = "npx"',
+        'args = ["-y", "@upstash/context7-mcp", "--api-key", "YOUR_API_KEY"]',
+        "startup_timeout_sec = 20",
+        "",
+      ].join("\n"),
+    )
+
+    // when
+    await updateCodexConfig({
+      configPath,
+      repoRoot: "/repo/packages/omo-codex",
+      marketplaceName: "sisyphuslabs",
+      marketplaceSource: { sourceType: "local", source: "/repo/packages/omo-codex/cache/sisyphuslabs" },
+      pluginNames: ["omo"],
+    })
+
+    // then
+    const content = await readFile(configPath, "utf8")
+    expect(content).toContain('[plugins."omo@sisyphuslabs".mcp_servers.context7]')
+    expect(content).not.toContain("[mcp_servers.context7]")
+    expect(content).not.toContain("@upstash/context7-mcp")
     expect(content).not.toContain("YOUR_API_KEY")
   })
 
@@ -310,6 +374,36 @@ describe("codex-config-toml", () => {
     expect(v2LegacySection).not.toContain("enabled")
     expect(content).toContain("usage_hint_enabled = false")
     expect(content).toContain("max_concurrent_threads_per_session = 10000")
+  })
+
+  test("#given legacy boolean MultiAgentV2 flag false #when updating config #then normalizes to a disabled table config", async () => {
+    // given
+    const root = await mkdtemp(join(tmpdir(), "omo-codex-config-multi-agent-legacy-false-"))
+    const configPath = join(root, "config.toml")
+    await writeFile(
+      configPath,
+      [
+        "[features]",
+        "multi_agent_v2 = false",
+        "plugins = false",
+        "",
+      ].join("\n"),
+    )
+
+    // when
+    await updateCodexConfig({
+      configPath,
+      repoRoot: "/repo/packages/omo-codex",
+      marketplaceName: "debug",
+      marketplaceSource: { sourceType: "local", source: "/repo/packages/omo-codex" },
+      pluginNames: ["omo"],
+    })
+
+    // then
+    const content = await readFile(configPath, "utf8")
+    expect(content).not.toMatch(/^multi_agent_v2\s*=/m)
+    expect(content).toContain("[features.multi_agent_v2]")
+    expect(content).toMatch(/\[features\.multi_agent_v2\]\nenabled = false\nmax_concurrent_threads_per_session = 10000/)
   })
 
   test("#given legacy agents max_threads #when updating config #then removes the conflicting legacy thread cap", async () => {
