@@ -14,8 +14,19 @@ type AtomicWriteDeps = {
   rm?: typeof rm
 }
 
+type LockOpenErrorDeps = {
+  readonly access?: typeof access
+}
+
+type LockReleaseDeps = {
+  readonly delay?: typeof delay
+  readonly unlink?: typeof unlink
+}
+
 const LOCK_RETRY_MS = 50
 const LOCK_WAIT_TIMEOUT_MS = 15_000
+const LOCK_RELEASE_RETRY_ATTEMPTS = 3
+const LOCK_RELEASE_RETRY_MS = 25
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -44,20 +55,35 @@ function errorCode(error: unknown): string | null {
   return typeof error.code === "string" ? error.code : null
 }
 
-async function pathExists(path: string): Promise<boolean> {
+function isPathAbsenceError(error: unknown): boolean {
+  const code = errorCode(error)
+  return code === "ENOENT" || code === "ENOTDIR"
+}
+
+function isRetryableLockReleaseError(error: unknown): boolean {
+  const code = errorCode(error)
+  return code === "EPERM" || code === "EBUSY"
+}
+
+async function pathMayExist(path: string, deps: LockOpenErrorDeps = {}): Promise<boolean> {
+  const accessPath = deps.access ?? access
   try {
-    await access(path)
+    await accessPath(path)
     return true
   } catch (error) {
     if (!(error instanceof Error)) throw error
-    return false
+    return !isPathAbsenceError(error)
   }
 }
 
-export async function assertRetryableLockOpenError(lockPath: string, error: unknown): Promise<void> {
+export async function assertRetryableLockOpenError(
+  lockPath: string,
+  error: unknown,
+  deps?: LockOpenErrorDeps,
+): Promise<void> {
   const code = errorCode(error)
   if (code === "EEXIST") return
-  if (code === "EPERM" && (await pathExists(lockPath))) return
+  if (code === "EPERM" && (await pathMayExist(lockPath, deps))) return
   throw error
 }
 
@@ -136,11 +162,21 @@ export async function detectStaleLock(lockPath: string, staleAfterMs: number): P
   }
 }
 
-export async function reapStaleLock(lockPath: string): Promise<void> {
-  await unlink(lockPath).catch((error: unknown) => {
-    if (error instanceof Error) return undefined
-    return undefined
-  })
+export async function reapStaleLock(lockPath: string, deps: LockReleaseDeps = {}): Promise<void> {
+  const wait = deps.delay ?? delay
+  const unlinkFile = deps.unlink ?? unlink
+
+  for (let attempt = 1; attempt <= LOCK_RELEASE_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      await unlinkFile(lockPath)
+      return
+    } catch (error) {
+      if (!(error instanceof Error)) return
+      if (isPathAbsenceError(error)) return
+      if (!isRetryableLockReleaseError(error) || attempt === LOCK_RELEASE_RETRY_ATTEMPTS) return
+      await wait(LOCK_RELEASE_RETRY_MS)
+    }
+  }
 }
 
 export async function atomicWrite(

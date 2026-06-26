@@ -24,7 +24,7 @@ test("#given empty Codex config #when script installer updates config #then avoi
 	const config = await readFile(configPath, "utf8");
 	assert.doesNotMatch(config, /^\s*multi_agent_mode\s*=/m);
 	assert.match(config, /\[features\.multi_agent_v2\]/);
-	const v2Section = config.slice(config.indexOf("[features.multi_agent_v2]")).split(/^\[/m).slice(0, 1).join("");
+	const v2Section = multiAgentV2Section(config);
 	assert.doesNotMatch(v2Section, /enabled\s*=/);
 	assert.match(config, /max_concurrent_threads_per_session = 10000/);
 });
@@ -137,7 +137,7 @@ test("#given existing Context7 MCP config #when script installer updates config 
 	await writeFile(
 		configPath,
 		[
-			"[mcp_servers.context7]",
+			"[mcp_servers.context7] # stale npx package from old docs",
 			'command = "node"',
 			'args = ["/opt/context7/server.js"]',
 			'startup_timeout_sec = 40',
@@ -160,6 +160,70 @@ test("#given existing Context7 MCP config #when script installer updates config 
 	assert.match(config, /command = "node"/);
 	assert.match(config, /args = \["\/opt\/context7\/server\.js"\]/);
 	assert.match(config, /startup_timeout_sec = 40/);
+	assert.doesNotMatch(config, /YOUR_API_KEY/);
+});
+
+test("#given real Context7 API key and placeholder comment #when script installer updates config #then preserves user setup", async () => {
+	// given
+	const root = await mkdtemp(join(tmpdir(), "omo-codex-script-config-context7-real-key-"));
+	const configPath = join(root, "config.toml");
+	await writeFile(
+		configPath,
+		[
+			"[mcp_servers.context7]",
+			'command = "npx"',
+			'args = ["-y", "@upstash/context7-mcp", "--api-key", "ctx7sk_live_example"] # replace YOUR_API_KEY in docs only',
+			"startup_timeout_sec = 20",
+			"",
+		].join("\n"),
+	);
+
+	// when
+	await updateCodexConfig({
+		configPath,
+		repoRoot: "/repo/packages/omo-codex",
+		marketplaceName: "sisyphuslabs",
+		marketplaceSource: { sourceType: "local", source: "/repo/packages/omo-codex/cache/sisyphuslabs" },
+		pluginNames: ["omo"],
+	});
+
+	// then
+	const config = await readFile(configPath, "utf8");
+	assert.match(config, /\[mcp_servers\.context7\]/);
+	assert.match(config, /ctx7sk_live_example/);
+	assert.match(config, /replace YOUR_API_KEY in docs only/);
+	assert.match(config, /\[plugins\."omo@sisyphuslabs"\.mcp_servers\.context7\]/);
+});
+
+test("#given stale Context7 placeholder MCP config #when script installer updates config #then removes it for plugin MCP", async () => {
+	// given
+	const root = await mkdtemp(join(tmpdir(), "omo-codex-script-config-context7-placeholder-"));
+	const configPath = join(root, "config.toml");
+	await writeFile(
+		configPath,
+		[
+			"[mcp_servers.context7]",
+			'command = "npx"',
+			'args = ["-y", "@upstash/context7-mcp", "--api-key", "YOUR_API_KEY"]',
+			"startup_timeout_sec = 20",
+			"",
+		].join("\n"),
+	);
+
+	// when
+	await updateCodexConfig({
+		configPath,
+		repoRoot: "/repo/packages/omo-codex",
+		marketplaceName: "sisyphuslabs",
+		marketplaceSource: { sourceType: "local", source: "/repo/packages/omo-codex/cache/sisyphuslabs" },
+		pluginNames: ["omo"],
+	});
+
+	// then
+	const config = await readFile(configPath, "utf8");
+	assert.match(config, /\[plugins\."omo@sisyphuslabs"\.mcp_servers\.context7\]/);
+	assert.doesNotMatch(config, /\[mcp_servers\.context7\]/);
+	assert.doesNotMatch(config, /@upstash\/context7-mcp/);
 	assert.doesNotMatch(config, /YOUR_API_KEY/);
 });
 
@@ -325,9 +389,42 @@ test("#given legacy boolean MultiAgentV2 flag and table #when script installer u
 	const config = await readFile(configPath, "utf8");
 	assert.doesNotMatch(config, /^multi_agent_v2\s*=/m);
 	assert.match(config, /\[features\.multi_agent_v2\]/);
-	assert.match(config, /enabled = true/);
-	assert.match(config, /usage_hint_enabled = false/);
-	assert.match(config, /max_concurrent_threads_per_session = 10000/);
+	const v2Section = multiAgentV2Section(config);
+	assert.doesNotMatch(v2Section, /^enabled\s*=/m);
+	assert.match(v2Section, /usage_hint_enabled = false/);
+	assert.match(v2Section, /max_concurrent_threads_per_session = 10000/);
+});
+
+test("#given legacy boolean MultiAgentV2 flag false #when script installer updates config #then normalizes to a disabled table config", async () => {
+	// given
+	const root = await mkdtemp(join(tmpdir(), "omo-codex-script-config-multi-agent-legacy-false-"));
+	const configPath = join(root, "config.toml");
+	await writeFile(
+		configPath,
+		[
+			"[features]",
+			"multi_agent_v2 = false",
+			"plugins = false",
+			"",
+		].join("\n"),
+	);
+
+	// when
+	await updateCodexConfig({
+		configPath,
+		repoRoot: "/repo/packages/omo-codex",
+		marketplaceName: "debug",
+		marketplaceSource: { sourceType: "local", source: "/repo/packages/omo-codex" },
+		pluginNames: ["omo"],
+	});
+
+	// then
+	const config = await readFile(configPath, "utf8");
+	assert.doesNotMatch(config, /^multi_agent_v2\s*=/m);
+	assert.match(config, /\[features\.multi_agent_v2\]/);
+	const v2Section = multiAgentV2Section(config);
+	assert.match(v2Section, /^enabled = false$/m);
+	assert.match(v2Section, /^max_concurrent_threads_per_session = 10000$/m);
 });
 
 test("#given legacy agents max_threads #when script installer updates config #then removes the conflicting legacy thread cap", async () => {
@@ -357,8 +454,9 @@ test("#given legacy agents max_threads #when script installer updates config #th
 	// then
 	const config = await readFile(configPath, "utf8");
 	assert.match(config, /\[features\.multi_agent_v2\]/);
-	assert.match(config, /enabled = true/);
-	assert.match(config, /max_concurrent_threads_per_session = 10000/);
+	const v2Section = multiAgentV2Section(config);
+	assert.doesNotMatch(v2Section, /^enabled\s*=/m);
+	assert.match(v2Section, /max_concurrent_threads_per_session = 10000/);
 	assert.match(config, /\[agents\]/);
 	assert.doesNotMatch(config, /^max_threads\s*=/m);
 	assert.match(config, /max_depth = 4/);
@@ -436,3 +534,12 @@ test("#given existing trust and lsp blocks #when updating config #then existing 
 	assert.match(content, /\[hooks\.state\."omo@sisyphuslabs:hooks\/hooks\.json:post_tool_use:0:0"\]/);
 	assert.match(content, /trusted_hash = "sha256:keep"/);
 });
+
+function multiAgentV2Section(config) {
+	const header = "[features.multi_agent_v2]";
+	const start = config.indexOf(header);
+	assert.notEqual(start, -1);
+	const rest = config.slice(start);
+	const nextHeader = rest.slice(1).search(/^\[/m);
+	return nextHeader === -1 ? rest : rest.slice(0, nextHeader + 1);
+}
