@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { BUILT_IN_REDACTION_RULE_COUNT } from "./qa/web-terminal-redaction.mjs"
 
 const helperPath = new URL("./qa/web-terminal-visual-qa.mjs", import.meta.url)
 const helperFilePath = fileURLToPath(helperPath)
@@ -93,7 +94,14 @@ describe("web terminal visual QA helper", () => {
       "Secret QA",
       [
         "Authorization: Bearer ghp_1234567890abcdefghijklmnop",
+        '{"headers":{"Authorization":"Bearer jsonSecretToken1234567890"}}',
+        "{ headers: { Authorization: 'Bearer objectSecretToken1234567890' } }",
+        "{ headers: { 'authorization': 'Bearer singleQuotedKeySecret1234567890' } }",
         "OPENAI_API_KEY=sk-1234567890abcdefghijklmnop",
+        'TOKEN="abc123SECRET"',
+        "PASSWORD='hunter2SECRET'",
+        'API_KEY="sk-test-SECRET"',
+        "SECRET='very-secret-value'",
         `custom=${literalSecret}`,
         `capturing=${customCapturingSecret}`,
         "session_id=sess_live_12345",
@@ -102,9 +110,23 @@ describe("web terminal visual QA helper", () => {
     )
 
     // then
+    const textArtifact = rendered.text()
+    const textLines = textArtifact.split("\n")
+    expect(textLines).toContain("Authorization: Bearer [REDACTED]")
+    expect(textLines).toContain('{"headers":{"Authorization":"Bearer [REDACTED]"}}')
+    expect(textLines).toContain("{ headers: { Authorization: 'Bearer [REDACTED]' } }")
+    expect(textLines).toContain("{ headers: { 'authorization': 'Bearer [REDACTED]' } }")
+
     const combinedArtifacts = [rendered.text(), rendered.ansi(), rendered.html(), JSON.stringify(rendered.metadata())].join("\n")
     expect(combinedArtifacts).not.toContain("ghp_1234567890abcdefghijklmnop")
+    expect(combinedArtifacts).not.toContain("jsonSecretToken1234567890")
+    expect(combinedArtifacts).not.toContain("objectSecretToken1234567890")
+    expect(combinedArtifacts).not.toContain("singleQuotedKeySecret1234567890")
     expect(combinedArtifacts).not.toContain("sk-1234567890abcdefghijklmnop")
+    expect(combinedArtifacts).not.toContain("abc123SECRET")
+    expect(combinedArtifacts).not.toContain("hunter2SECRET")
+    expect(combinedArtifacts).not.toContain("sk-test-SECRET")
+    expect(combinedArtifacts).not.toContain("very-secret-value")
     expect(combinedArtifacts).not.toContain(literalSecret)
     expect(combinedArtifacts).not.toContain(customCapturingSecret)
     expect(combinedArtifacts).not.toContain("cap-secret-")
@@ -112,7 +134,7 @@ describe("web terminal visual QA helper", () => {
     expect(combinedArtifacts).toContain("[REDACTED]")
     expect(rendered.metadata()).toMatchObject({
       redaction: {
-        builtInRules: 5,
+        builtInRules: BUILT_IN_REDACTION_RULE_COUNT,
         literalRules: 1,
         regexRules: 2,
       },
