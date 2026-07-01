@@ -150,10 +150,11 @@ path-mapped from the designpowers project. It is not committed here; the build
 materializes the selected files from the pinned submodule under
 `packages/shared-skills/upstreams/designpowers`. The materialized set includes the
 upstream `LICENSE`, ten `agents/*.md` role-reference files, and selected
-`skills/*/SKILL.md` files. Bridge/state/router integration skills are intentionally
+`skills/*/SKILL.md` files renamed to `vendor/skills/*/reference.md` so they remain
+reference documents instead of nested skill entrypoints. Bridge/state/router integration skills are intentionally
 excluded; see `frontend/references/designpowers/UPSTREAM.md` for the allowlist and
 exclusion list. Only the allowed frontmatter description quoting normalization described
-above may alter these materialized `SKILL.md` files.
+above may alter these materialized `reference.md` files.
 
 - Source: https://github.com/Owl-Listener/designpowers
 - Pinned upstream commit: cb00757da9d554591fa78d27aa1854d60a05c4f7
@@ -199,3 +200,10 @@ capture evidence and a local reconnaissance run following the MIT-licensed
 `JCodesMore/ai-website-cloner-template` workflow; it is not copied from Aside or from the
 template. Aside names, trademarks, product text, and visual assets remain the property of
 their respective owners and are referenced only for descriptive design-analysis purposes.
+
+`frontend/references/design/clone-from-url.md` is a project-original runtime-extraction
+workflow guide. Its browser + `getComputedStyle` clone approach follows the same
+MIT-licensed `JCodesMore/ai-website-cloner-template` clone-website workflow that `aside.md`
+cites; no source from that template is copied. It carries no third-party attribution beyond
+that lineage note, and it grants no license to copy any target site's trademarks, brand
+assets, or proprietary copy.
