@@ -1,6 +1,4 @@
 import { log } from "../../shared"
-import { CONFIG_BASENAME } from "../../shared/plugin-identity"
-
 import type { BackgroundTaskConfig } from "../../config/schema"
 import type { BackgroundTask } from "./types"
 import type { ConcurrencyManager } from "./concurrency"
@@ -116,6 +114,7 @@ export type SessionStatusMap = Record<string, { type: string }>
 async function interruptStaleTask(args: {
   task: BackgroundTask
   client: OpencodeClient
+  directory?: string
   concurrencyManager: ConcurrencyManager
   notifyParentSession: (task: BackgroundTask) => Promise<void>
   onTaskInterrupted: (task: BackgroundTask) => void
@@ -129,6 +128,7 @@ async function interruptStaleTask(args: {
   const {
     task,
     client,
+    directory,
     concurrencyManager,
     notifyParentSession,
     onTaskInterrupted,
@@ -142,18 +142,26 @@ async function interruptStaleTask(args: {
 
   const aborted = await abortWithTimeout(client, sessionID)
   if (!aborted) {
-    log("[background-agent] Task stale interruption skipped because session abort failed:", {
+    const existence = await checkSessionExistence(client, sessionID, directory)
+    if (existence !== "missing") {
+      log("[background-agent] Task stale interruption skipped because session abort failed:", {
+        taskId: task.id,
+        sessionID,
+        reason,
+      })
+      return
+    }
+    log("[background-agent] Session is gone and cannot be aborted; finalizing the stale task:", {
       taskId: task.id,
       sessionID,
       reason,
     })
-    return
   }
 
   if (task.status !== "running" || task.sessionId !== sessionID) return
 
   task.status = "cancelled"
-  task.error = `Stale timeout (${reason} for ${staleMinutes}min${errorSuffix}). This is a FINAL cancellation - do NOT create a replacement task. If the timeout is too short, increase 'background_task.${timeoutConfigKey}' in .opencode/${CONFIG_BASENAME}.json.`
+  task.error = `Stale timeout (${reason} for ${staleMinutes}min${errorSuffix}). This is a FINAL cancellation - do NOT create a replacement task. If the timeout is too short, increase 'background_task.${timeoutConfigKey}' in .omo/omo.jsonc.`
   task.completedAt = new Date()
 
   if (task.concurrencyKey) {
@@ -251,6 +259,7 @@ export async function checkAndInterruptStaleTasks(args: {
         interruptStaleTask({
           task,
           client,
+          directory,
           concurrencyManager,
           notifyParentSession,
           onTaskInterrupted,
@@ -301,6 +310,7 @@ export async function checkAndInterruptStaleTasks(args: {
       interruptStaleTask({
         task,
         client,
+        directory,
         concurrencyManager,
         notifyParentSession,
         onTaskInterrupted,

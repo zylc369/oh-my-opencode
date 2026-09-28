@@ -1,6 +1,5 @@
 import { readFile } from "node:fs/promises";
 
-import { type CheckpointUlwLoopArgs, checkpointUlwLoop } from "./checkpoint.js";
 import {
 	hasFlag,
 	parseCodexGoalJson,
@@ -10,19 +9,16 @@ import {
 	readValue,
 } from "./cli-arg-parser.js";
 import { blockedDecisionHandoff, normalizeCodexGoalMode, printJson, printStatus } from "./cli-output.js";
-import { parseSteeringProposal, printSteerResult } from "./cli-steering.js";
+import { parseSteeringProposals, printSteerBatchResult, printSteerResult } from "./cli-steering.js";
 import { buildCodexGoalInstruction } from "./codex-goal-instruction.js";
-import { recordEvidence } from "./evidence.js";
 import { isEssentialCriterion } from "./goal-status.js";
 import type { UlwLoopScope } from "./paths.js";
-import { addUlwLoopGoal, createUlwLoopPlan, startNextUlwLoop, summarizeUlwLoopPlan } from "./plan-crud.js";
-import { readUlwLoopPlan } from "./plan-io.js";
-import { recordFinalReviewBlockers } from "./review-blockers.js";
-import { steerUlwLoop } from "./steering.js";
+import { summarizeUlwLoopPlan } from "./plan-crud.js";
+import { type AgentToolkit, createAgentToolkit } from "./sdk.js";
+import { steerUlwLoopBatch } from "./steering-batch.js";
+import { resolveToolkitSurface } from "./surface.js";
 import type { UlwLoopItem } from "./types.js";
 import { UlwLoopError } from "./types.js";
-
-type CheckpointStatus = "complete" | "failed" | "blocked";
 
 export async function createGoals(
 	repoRoot: string,
@@ -42,14 +38,14 @@ export async function createGoals(
 			"ULW_LOOP_BRIEF_REQUIRED",
 		);
 	}
-	const plan = await createUlwLoopPlan(
-		repoRoot,
-		{
+	const validationBatchesJson = readValue(argv, "--validation-batch-json");
+	const plan = unwrap(
+		await toolkitFor(repoRoot, scope).createGoals({
 			brief,
 			codexGoalMode: normalizeCodexGoalMode(readValue(argv, "--codex-goal-mode")),
 			force: hasFlag(argv, "--force"),
-		},
-		scope,
+			...(validationBatchesJson === undefined ? {} : { validationBatchesJson }),
+		}),
 	);
 	if (json) printJson({ ok: true, plan, summary: summarizeUlwLoopPlan(plan) });
 	else {
@@ -61,9 +57,9 @@ export async function createGoals(
 }
 
 export async function status(repoRoot: string, json: boolean, scope?: UlwLoopScope): Promise<number> {
-	const plan = await readUlwLoopPlan(repoRoot, scope);
-	if (json) printJson({ ok: true, plan, summary: summarizeUlwLoopPlan(plan) });
-	else printStatus(plan);
+	const status = unwrap(await toolkitFor(repoRoot, scope).status());
+	if (json) printJson({ ok: true, ...status });
+	else printStatus(status.plan);
 	return 0;
 }
 
@@ -73,7 +69,9 @@ export async function completeGoals(
 	json: boolean,
 	scope?: UlwLoopScope,
 ): Promise<number> {
-	const result = await startNextUlwLoop(repoRoot, { retryFailed: hasFlag(argv, "--retry-failed") }, scope);
+	const result = unwrap(
+		await toolkitFor(repoRoot, scope).completeGoals({ retryFailed: hasFlag(argv, "--retry-failed") }),
+	);
 	if ("done" in result) {
 		const handoff = blockedDecisionHandoff(result.plan);
 		if (json) {
@@ -94,44 +92,21 @@ export async function completeGoals(
 	return 0;
 }
 
-export async function checkpoint(
-	repoRoot: string,
-	argv: readonly string[],
-	json: boolean,
-	scope?: UlwLoopScope,
-): Promise<number> {
-	const goalId = required(argv, "--goal-id");
-	const statusValue = checkpointStatus(required(argv, "--status"));
-	const evidence = required(argv, "--evidence");
-	const codexGoalJson = await parseCodexGoalJson(
-		statusValue === "complete" ? required(argv, "--codex-goal-json") : readValue(argv, "--codex-goal-json"),
-	);
-	if (statusValue === "complete" && codexGoalJson === undefined) {
-		throw new UlwLoopError("Missing --codex-goal-json.", "ULW_LOOP_CODEX_GOAL_JSON_REQUIRED");
-	}
-	const qualityGateJson = readValue(argv, "--quality-gate-json");
-	const args: CheckpointUlwLoopArgs = {
-		goalId,
-		status: statusValue,
-		evidence,
-		...(codexGoalJson === undefined ? {} : { codexGoalJson }),
-		...(qualityGateJson === undefined ? {} : { qualityGateJson }),
-	};
-	const result = await checkpointUlwLoop(repoRoot, args, scope);
-	if (json) printJson({ ok: true, ...result, summary: summarizeUlwLoopPlan(result.plan) });
-	else process.stdout.write(`ulw-loop checkpoint: ${result.goal.id} -> ${result.goal.status}\n`);
-	return 0;
-}
-
 export async function steer(
 	repoRoot: string,
 	argv: readonly string[],
 	json: boolean,
 	scope?: UlwLoopScope,
 ): Promise<number> {
-	const proposal = await parseSteeringProposal(argv);
-	const result = await steerUlwLoop(repoRoot, proposal, scope);
-	printSteerResult(result, json);
+	const proposals = await parseSteeringProposals(argv);
+	const single = proposals[0];
+	if (single !== undefined && proposals.length === 1 && readValue(argv, "--proposals-json") === undefined) {
+		const result = unwrap(await toolkitFor(repoRoot, scope).steer(single));
+		printSteerResult(result, json);
+		return result.accepted ? 0 : 1;
+	}
+	const result = await steerUlwLoopBatch(repoRoot, proposals, scope);
+	printSteerBatchResult(result, json);
 	return result.accepted ? 0 : 1;
 }
 
@@ -141,10 +116,11 @@ export async function addGoal(
 	json: boolean,
 	scope?: UlwLoopScope,
 ): Promise<number> {
-	const result = await addUlwLoopGoal(
-		repoRoot,
-		{ title: required(argv, "--title"), objective: required(argv, "--objective") },
-		scope,
+	const result = unwrap(
+		await toolkitFor(repoRoot, scope).addGoal({
+			title: required(argv, "--title"),
+			objective: required(argv, "--objective"),
+		}),
 	);
 	if (json) printJson({ ok: true, plan: result.plan, goal: result.goal, summary: summarizeUlwLoopPlan(result.plan) });
 	else {
@@ -161,10 +137,12 @@ export async function criteria(
 	scope?: UlwLoopScope,
 ): Promise<number> {
 	const goalId = required(argv, "--goal-id");
-	const goal = findGoal(await readUlwLoopPlan(repoRoot, scope), goalId);
-	if (json) printJson({ ok: true, goalId: goal.id, criteria: goal.successCriteria });
+	const result = unwrap(await toolkitFor(repoRoot, scope).criteria({ goalId }));
+	if (json) printJson({ ok: true, goalId: result.goalId, criteria: result.criteria });
 	else {
-		process.stdout.write(`criteria for ${goal.id}:\n${goal.successCriteria.map(formatCriterionForCli).join("\n")}\n`);
+		process.stdout.write(
+			`criteria for ${result.goalId}:\n${result.criteria.map(formatCriterionForCli).join("\n")}\n`,
+		);
 	}
 	return 0;
 }
@@ -175,7 +153,7 @@ export async function captureEvidence(
 	json: boolean,
 	scope?: UlwLoopScope,
 ): Promise<number> {
-	const result = await recordEvidence(repoRoot, parseRecordEvidenceArgs(argv), scope);
+	const result = unwrap(await toolkitFor(repoRoot, scope).recordEvidence(parseRecordEvidenceArgs(argv)));
 	if (json) printJson({ ok: true, ...result, summary: summarizeUlwLoopPlan(result.plan) });
 	else {
 		process.stdout.write(
@@ -195,16 +173,14 @@ export async function reviewBlockers(
 	if (codexGoalJson === undefined) {
 		throw new UlwLoopError("Missing --codex-goal-json.", "ULW_LOOP_CODEX_GOAL_JSON_REQUIRED");
 	}
-	const result = await recordFinalReviewBlockers(
-		repoRoot,
-		{
+	const result = unwrap(
+		await toolkitFor(repoRoot, scope).recordReviewBlockers({
 			goalId: required(argv, "--goal-id"),
 			title: required(argv, "--title"),
 			objective: required(argv, "--objective"),
 			evidence: required(argv, "--evidence"),
 			codexGoalJson,
-		},
-		scope,
+		}),
 	);
 	if (json) {
 		printJson({
@@ -213,6 +189,8 @@ export async function reviewBlockers(
 			blockedGoal: result.blockedGoal,
 			goal: result.newGoal,
 			ledgerEntries: result.ledgerEntries,
+			nextActions: result.nextActions,
+			warnings: result.warnings,
 			summary: summarizeUlwLoopPlan(result.plan),
 		});
 	} else {
@@ -221,6 +199,28 @@ export async function reviewBlockers(
 		);
 	}
 	return 0;
+}
+
+// Every subcommand runs through the SDK so state logic lives in one place; the CLI keeps only argv
+// parsing and the legacy output shapes. A failed envelope is rethrown as the typed error the CLI's
+// JSON error path already prints.
+function toolkitFor(repoRoot: string, scope?: UlwLoopScope): AgentToolkit {
+	const sessionId = scope?.sessionId?.trim();
+	if (sessionId === undefined || sessionId.length === 0) {
+		throw new UlwLoopError("Missing --session-id.", "ULW_LOOP_SESSION_ID_REQUIRED", {
+			details: { flag: "--session-id" },
+		});
+	}
+	return createAgentToolkit({ cwd: repoRoot, sessionId, surface: resolveToolkitSurface() });
+}
+
+function unwrap<Result>(
+	response:
+		| { readonly ok: true; readonly result: Result }
+		| { readonly ok: false; readonly error: { readonly code: string; readonly message: string } },
+): Result {
+	if (response.ok) return response.result;
+	throw new UlwLoopError(response.error.message, response.error.code);
 }
 
 function formatCriterionForCli(criterion: UlwLoopItem["successCriteria"][number]): string {
@@ -232,19 +232,4 @@ function required(argv: readonly string[], flag: string): string {
 	const value = readValue(argv, flag)?.trim();
 	if (value) return value;
 	throw new UlwLoopError(`Missing ${flag}.`, "ULW_LOOP_ARGUMENT_MISSING", { details: { flag } });
-}
-
-function checkpointStatus(value: string): CheckpointStatus {
-	if (value === "complete" || value === "failed" || value === "blocked") return value;
-	throw new UlwLoopError(
-		"Missing or invalid --status; expected complete, failed, or blocked.",
-		"ULW_LOOP_STATUS_INVALID",
-		{ details: { status: value } },
-	);
-}
-
-function findGoal(plan: { readonly goals: readonly UlwLoopItem[] }, goalId: string): UlwLoopItem {
-	const goal = plan.goals.find((candidate) => candidate.id === goalId);
-	if (goal !== undefined) return goal;
-	throw new UlwLoopError(`Unknown ulw-loop id: ${goalId}.`, "ULW_LOOP_GOAL_NOT_FOUND", { details: { goalId } });
 }

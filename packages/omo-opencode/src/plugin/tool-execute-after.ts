@@ -1,11 +1,7 @@
 import { recoverToolMetadata } from "../features/tool-metadata-store"
-import { buildCodegraphInitGuidanceForToolResult } from "@oh-my-opencode/utils"
 import type { CreatedHooks } from "../create-hooks"
 import { log as defaultLog } from "../shared/logger"
-import { stripInvisibleAgentCharacters } from "../shared/agent-display-names"
 import type { PluginContext } from "./types"
-
-const VERIFICATION_ATTEMPT_PATTERN = /<ulw_verification_attempt_id>(.*?)<\/ulw_verification_attempt_id>/i
 
 const METADATA_LINKED_TOOLS = new Set([
   "background_output",
@@ -39,30 +35,8 @@ function getMetadataString(metadata: Record<string, unknown> | undefined, keys: 
   return undefined
 }
 
-function getPluginDirectory(ctx: PluginContext): string | null {
-  if (typeof ctx === "object" && ctx !== null && "directory" in ctx && typeof ctx.directory === "string") {
-    return ctx.directory
-  }
-
-  return null
-}
-
 function expectsRecoverableMetadata(tool: string): boolean {
   return METADATA_LINKED_TOOLS.has(tool)
-}
-
-function appendCodegraphInitGuidance(
-  input: ToolExecuteAfterInput,
-  output: ToolExecuteAfterOutput,
-  cwd: string | null,
-): void {
-  const guidance = buildCodegraphInitGuidanceForToolResult({
-    cwd: cwd ?? undefined,
-    toolName: input.tool,
-    toolOutput: output.output,
-  })
-  if (guidance === null || output.output.includes(guidance)) return
-  output.output = `${output.output}\n\n${guidance}`
 }
 
 export function createToolExecuteAfterHandler(args: {
@@ -73,7 +47,7 @@ export function createToolExecuteAfterHandler(args: {
   input: ToolExecuteAfterInput,
   output: ToolExecuteAfterOutput | undefined,
 ) => Promise<void> {
-  const { ctx, hooks } = args
+  const { hooks } = args
   const log = args.log ?? defaultLog
 
   // OpenCode injects tool call ids into execute() context and after-hook input via undocumented runtime fields.
@@ -84,8 +58,6 @@ export function createToolExecuteAfterHandler(args: {
     output: ToolExecuteAfterOutput | undefined,
   ): Promise<void> => {
     if (!output) return
-
-    appendCodegraphInitGuidance(input, output, getPluginDirectory(ctx))
 
     const hookInput = {
       tool: input.tool,
@@ -119,62 +91,6 @@ export function createToolExecuteAfterHandler(args: {
         sessionID: input.sessionID,
         callID: input.callID ?? input.callId ?? input.call_id,
       })
-    }
-
-    if (input.tool === "task") {
-      const directory = getPluginDirectory(ctx)
-      const sessionId = getMetadataString(output.metadata, ["sessionId", "sessionID", "session_id"])
-      const agent = getMetadataString(output.metadata, ["agent"])
-      const prompt = getMetadataString(output.metadata, ["prompt"])
-      const verificationAttemptId = prompt?.match(VERIFICATION_ATTEMPT_PATTERN)?.[1]?.trim()
-      const loopState = directory
-        ? (await import("../hooks/ralph-loop/storage")).readState(directory)
-        : null
-      const isVerificationContext =
-        (agent ? stripInvisibleAgentCharacters(agent) : agent) === "oracle"
-        && !!sessionId
-        && !!directory
-        && loopState?.active === true
-        && loopState.ultrawork === true
-        && loopState.verification_pending === true
-        && loopState.session_id === input.sessionID
-
-      log("[tool-execute-after] ULW verification tracking check", {
-        tool: input.tool,
-        agent,
-        parentSessionID: input.sessionID,
-        oracleSessionID: sessionId,
-        hasPromptInMetadata: typeof prompt === "string",
-        extractedVerificationAttemptId: verificationAttemptId,
-      })
-
-      if (
-        isVerificationContext
-        && verificationAttemptId
-        && loopState.verification_attempt_id === verificationAttemptId
-      ) {
-        ;(await import("../hooks/ralph-loop/storage")).writeState(directory, {
-          ...loopState,
-          verification_session_id: sessionId,
-        })
-        log("[tool-execute-after] Stored oracle verification session via attempt match", {
-          parentSessionID: input.sessionID,
-          oracleSessionID: sessionId,
-          verificationAttemptId,
-        })
-      } else if (isVerificationContext && !verificationAttemptId) {
-        ;(await import("../hooks/ralph-loop/storage")).writeState(directory, {
-          ...loopState,
-          verification_session_id: sessionId,
-        })
-        log("[tool-execute-after] Fallback: stored oracle verification session without attempt match", {
-          parentSessionID: input.sessionID,
-          oracleSessionID: sessionId,
-          hasPromptInMetadata: typeof prompt === "string",
-          expectedAttemptId: loopState.verification_attempt_id,
-          extractedAttemptId: verificationAttemptId,
-        })
-      }
     }
 
     const runToolExecuteAfterHooks = async (): Promise<void> => {

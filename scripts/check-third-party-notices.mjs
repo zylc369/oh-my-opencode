@@ -9,30 +9,10 @@ import { CODEX_COMPONENT_NOTICE_REQUIREMENTS } from "./third-party-notice-requir
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..")
 const WINDOWS_CMD_SHIM_COMMANDS = new Set(["npm", "npx"])
 
-const CODEGRAPH_COMPONENTS = [
-  "@colbymchenry/codegraph",
-  "@colbymchenry/codegraph-darwin-arm64",
-  "@colbymchenry/codegraph-darwin-x64",
-  "@colbymchenry/codegraph-linux-arm64",
-  "@colbymchenry/codegraph-linux-x64",
-  "@colbymchenry/codegraph-win32-arm64",
-  "@colbymchenry/codegraph-win32-x64",
-  "CodeGraph bundled Node.js runtime",
-  "tree-sitter-wasms",
-  "web-tree-sitter",
-  "@clack/core",
-  "fast-string-truncated-width",
-  "fast-string-width",
-  "fast-wrap-ansi",
-  "ignore",
-  "sisteransi",
-]
-
 const ROOT_BUNDLED_COMPONENTS = [
   "pi-lsp-client",
   "pi-rules",
   "pi-comment-checker",
-  ...CODEGRAPH_COMPONENTS,
 ]
 
 const CODEX_AGGREGATE_COMPONENTS = [
@@ -40,7 +20,7 @@ const CODEX_AGGREGATE_COMPONENTS = [
   "@code-yeongyu/codex-comment-checker",
   "@code-yeongyu/codex-lsp",
   "@code-yeongyu/codex-rules",
-  "@code-yeongyu/codex-start-work-continuation",
+  "@code-yeongyu/codex-ulw-execute-continuation",
   "@code-yeongyu/codex-telemetry",
   "@code-yeongyu/codex-ultrawork",
   "@code-yeongyu/codex-ulw-loop",
@@ -251,17 +231,28 @@ export function resolveSpawnSyncInvocation(command, args, platform = process.pla
   }
 }
 
-function parseNpmPackJson(output) {
-  for (let index = output.indexOf("["); index !== -1; index = output.indexOf("[", index + 1)) {
+export function parseNpmPackJson(output) {
+  for (let index = 0; index < output.length; index += 1) {
+    if (output[index] !== "[" && output[index] !== "{") continue
     try {
       const parsed = JSON.parse(output.slice(index))
-      if (Array.isArray(parsed) && parsed[0]?.files !== undefined) return parsed
+      const entries = Array.isArray(parsed) ? parsed : parsed && typeof parsed === "object" ? Object.values(parsed) : []
+      if (entries.length === 1 && entries.every(isNpmPackEntry)) return entries
     } catch (error) {
       if (error instanceof SyntaxError) continue
       throw error
     }
   }
   throw new Error("npm pack --dry-run --json did not produce a parseable file list")
+}
+
+function isNpmPackEntry(value) {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    Array.isArray(value.files) &&
+    value.files.every((file) => file !== null && typeof file === "object" && typeof file.path === "string")
+  )
 }
 
 function isMainModule() {

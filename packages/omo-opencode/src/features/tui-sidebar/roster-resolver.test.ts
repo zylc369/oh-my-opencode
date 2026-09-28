@@ -62,7 +62,7 @@ describe("resolveRoster", () => {
       // then
       expect(rows.length).toBeGreaterThan(0)
       expect(rows.some((row) => row.label === "sisyphus")).toBe(true)
-      expect(rows.some((row) => row.label === "deep")).toBe(true)
+      expect(rows.some((row) => row.label === "deep-low")).toBe(true)
     })
   })
 
@@ -70,12 +70,14 @@ describe("resolveRoster", () => {
     withIsolatedConfig("overrides", (root) => {
       // given
       const project = join(root, "project")
-      writeJson(join(project, ".opencode", "oh-my-openagent.json"), {
-        agents: {
-          sisyphus: { model: "provider/family/model-leaf" },
-        },
-        categories: {
-          deep: { model: "simple-model" },
+      writeJson(join(project, ".omo", "omo.jsonc"), {
+        "[opencode]": {
+          agents: {
+            sisyphus: { model: "provider/family/model-leaf" },
+          },
+          categories: {
+            "deep-low": { model: "simple-model" },
+          },
         },
       })
 
@@ -85,7 +87,7 @@ describe("resolveRoster", () => {
       // then
       expect(rows).toEqual([...rows].sort((left, right) => left.label.localeCompare(right.label)))
       expect(rows).toContainEqual({ label: "sisyphus", model: "model-leaf" })
-      expect(rows).toContainEqual({ label: "deep", model: "simple-model" })
+      expect(rows).toContainEqual({ label: "deep-low", model: "simple-model" })
     })
   })
 
@@ -93,7 +95,7 @@ describe("resolveRoster", () => {
     withIsolatedConfig("malformed", (root) => {
       // given
       const project = join(root, "project")
-      writeJson(join(project, ".opencode", "oh-my-openagent.json"), {
+      writeJson(join(project, ".opencode", "omo.json"), {
         agents: { sisyphus: { model: 123 } },
       })
 

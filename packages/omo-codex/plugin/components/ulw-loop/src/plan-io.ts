@@ -1,124 +1,211 @@
-import { appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
-
+import { AsyncLocalStorage } from "node:async_hooks";
+import { readdirSync } from "node:fs";
 import { aggregateCodexObjectiveForScope } from "./goal-status.js";
+import { readLedger as reconcileLedger } from "./ledger.js";
 import {
 	repoRelative,
 	type UlwLoopScope,
 	ulwLoopDir,
 	ulwLoopGoalsPath,
-	ulwLoopLedgerPath,
 	ulwLoopRelativeDir,
+	ulwLoopStateLockPath,
 } from "./paths.js";
-import type { UlwLoopLedgerEntry, UlwLoopPlan } from "./types.js";
-import { iso, ULW_LOOP_DIR, ULW_LOOP_GOALS, ULW_LOOP_LEDGER, UlwLoopError } from "./types.js";
+import { commit, materialize, materializeSync } from "./plan-commit.js";
+import { readOptional, reconcilePlan } from "./plan-log.js";
+import { planMissingError } from "./plan-missing-recovery.js";
+import { type StateLockOptions, withStateLock } from "./state-lock.js";
+import {
+	iso,
+	ULW_LOOP_DIR,
+	ULW_LOOP_GOALS,
+	ULW_LOOP_LEDGER,
+	UlwLoopError,
+	type UlwLoopLedgerEntry,
+	type UlwLoopPlan,
+} from "./types.js";
+
+export function readLedger(repoRoot: string, scope?: UlwLoopScope): UlwLoopLedgerEntry[] {
+	const lockPath = ulwLoopStateLockPath(repoRoot, scope);
+	if (heldLocks.getStore()?.has(lockPath)) {
+		assertStateLockOwned(lockPath);
+		materializeSync(ulwLoopDir(repoRoot, scope));
+	}
+	return reconcileLedger(repoRoot, scope);
+}
+export { planExists } from "./plan-log.js";
 
 const LEGACY_OBJECTIVE_PREFIX = `Complete all ulw-loop stories in ${ULW_LOOP_DIR}/${ULW_LOOP_GOALS}: `;
 const LEGACY_OBJECTIVE = `Complete all ulw-loop stories listed in ${ULW_LOOP_DIR}/${ULW_LOOP_GOALS}. Use ${ULW_LOOP_DIR}/${ULW_LOOP_LEDGER} as the durable audit trail.`;
-const locks = new Map<string, Promise<unknown>>();
-
-function hasCode(error: unknown, code: string): boolean {
-	return error instanceof Error && "code" in error && error.code === code;
+const locks = new Map<string, Promise<undefined>>();
+interface LockContext {
+	readonly token: string;
+	readonly migrations: Map<string, UlwLoopLedgerEntry[]>;
 }
-
-function isLegacyEnumeratedAggregateObjective(objective: string | undefined): objective is string {
-	return objective === LEGACY_OBJECTIVE || Boolean(objective?.startsWith(LEGACY_OBJECTIVE_PREFIX));
+const heldLocks = new AsyncLocalStorage<ReadonlyMap<string, LockContext>>();
+const lockOptions = new AsyncLocalStorage<StateLockOptions>();
+export function withMutationLockOptions<T>(options: StateLockOptions, fn: () => Promise<T>): Promise<T> {
+	return lockOptions.run(options, fn);
 }
-
-function isSteeringKind(value: unknown): value is UlwLoopLedgerEntry["kind"] {
-	return value === "steering_accepted" || value === "steering_rejected" || value === "criteria_revised";
+function tokenAt(lockPath: string): string | undefined {
+	const raw = readOptional(lockPath);
+	if (raw === undefined) return undefined;
+	try {
+		const record: unknown = JSON.parse(raw);
+		return typeof record === "object" && record !== null && "token" in record && typeof record.token === "string"
+			? record.token
+			: undefined;
+	} catch (error) {
+		if (error instanceof SyntaxError) return undefined;
+		throw error;
+	}
 }
-
+export function assertStateLockOwned(lockPath: string): void {
+	const context = heldLocks.getStore()?.get(lockPath);
+	if (context === undefined) return;
+	if (tokenAt(lockPath) !== context.token)
+		throw new UlwLoopError("The ulw-loop mutation lock changed owners.", "ULW_LOOP_LOCK_LOST");
+}
+export function migrationEntries(plan: UlwLoopPlan): readonly UlwLoopLedgerEntry[] {
+	for (const context of heldLocks.getStore()?.values() ?? []) {
+		const entries = context.migrations.get(plan.goalsPath);
+		if (entries !== undefined) {
+			context.migrations.delete(plan.goalsPath);
+			return entries;
+		}
+	}
+	return [];
+}
 export async function withUlwLoopMutationLock<T>(repoRoot: string, fn: () => Promise<T>): Promise<T>;
 export async function withUlwLoopMutationLock<T>(
 	repoRoot: string,
 	scope: UlwLoopScope | undefined,
 	fn: () => Promise<T>,
+	options?: StateLockOptions,
 ): Promise<T>;
 export async function withUlwLoopMutationLock<T>(
 	repoRoot: string,
 	scopeOrFn: UlwLoopScope | (() => Promise<T>) | undefined,
 	maybeFn?: () => Promise<T>,
+	options: StateLockOptions = {},
 ): Promise<T> {
 	const scope = typeof scopeOrFn === "function" ? undefined : scopeOrFn;
 	const fn = typeof scopeOrFn === "function" ? scopeOrFn : maybeFn;
 	if (fn === undefined) throw new UlwLoopError("Missing ulw-loop mutation body.", "ULW_LOOP_LOCK_BODY_MISSING");
 	const lockKey = `${repoRoot}\0${ulwLoopRelativeDir(scope)}`;
-	const prior = locks.get(lockKey) ?? Promise.resolve();
-	const run = prior.then(fn, fn);
-	locks.set(
-		lockKey,
-		run.catch(() => undefined),
+	const lockPath = ulwLoopStateLockPath(repoRoot, scope);
+	const locked = () =>
+		withStateLock(
+			lockPath,
+			async (token) => {
+				return heldLocks.run(
+					new Map([...(heldLocks.getStore() ?? []), [lockPath, { token, migrations: new Map() }]]),
+					async () => {
+						for (let attempt = 0; ; attempt += 1) {
+							try {
+								return await fn();
+							} catch (error) {
+								if (!(error instanceof UlwLoopError) || error.code !== "ULW_LOOP_PUBLISH_CONFLICT") throw error;
+								assertStateLockOwned(lockPath);
+								if (attempt !== 0) throw error;
+							}
+						}
+					},
+				);
+			},
+			{ ...lockOptions.getStore(), ...options },
+		);
+	const prior = locks.get(lockKey) ?? Promise.resolve(undefined);
+	const run = prior.then(locked, locked);
+	const gate = run.then(
+		() => undefined,
+		() => undefined,
 	);
+	locks.set(lockKey, gate);
+	void gate.then(() => {
+		if (locks.get(lockKey) === gate) locks.delete(lockKey);
+	});
 	return run;
 }
-
-export async function readUlwLoopPlan(repoRoot: string, scope?: UlwLoopScope): Promise<UlwLoopPlan> {
+export function readUlwLoopPlanSync(repoRoot: string, scope?: UlwLoopScope): UlwLoopPlan {
 	const path = ulwLoopGoalsPath(repoRoot, scope);
-	let raw: string;
-	try {
-		raw = await readFile(path, "utf8");
-	} catch (error) {
-		if (!hasCode(error, "ENOENT")) throw error;
-		throw new UlwLoopError(
-			`No ulw-loop plan found at ${repoRelative(path, repoRoot)}. Run \`omo ulw-loop create-goals ...\` first.`,
-			"ULW_LOOP_PLAN_MISSING",
-			{ cause: error },
-		);
-	}
-	const parsed: UlwLoopPlan = JSON.parse(raw);
-	if (parsed.version !== 1 || !Array.isArray(parsed.goals)) {
+	const parsed = reconcilePlan(ulwLoopDir(repoRoot, scope));
+	if (parsed === undefined) throw planMissingError(repoRelative(path, repoRoot), listUlwLoopSessionIds(repoRoot));
+	if (parsed.version !== 1 || !Array.isArray(parsed.goals))
 		throw new UlwLoopError(`Invalid ulw-loop plan at ${repoRelative(path, repoRoot)}.`, "ULW_LOOP_PLAN_INVALID");
-	}
 	const previousObjective = parsed.codexObjective;
 	if (
 		(parsed.codexGoalMode ?? "per_story") === "aggregate" &&
-		isLegacyEnumeratedAggregateObjective(previousObjective)
+		previousObjective !== undefined &&
+		(previousObjective === LEGACY_OBJECTIVE || previousObjective.startsWith(LEGACY_OBJECTIVE_PREFIX))
 	) {
-		const now = iso();
 		parsed.codexObjective = aggregateCodexObjectiveForScope(scope);
 		parsed.codexObjectiveAliases = [...new Set([...(parsed.codexObjectiveAliases ?? []), previousObjective])];
-		parsed.updatedAt = now;
-		await writePlan(repoRoot, parsed, scope);
-		await appendLedger(
-			repoRoot,
-			{
-				at: now,
-				kind: "aggregate_objective_migrated",
-				message: "Migrated legacy enumerated aggregate Codex objective to the stable pointer objective.",
-				before: { codexObjective: previousObjective },
-				after: { codexObjective: parsed.codexObjective },
-			},
-			scope,
-		);
+		heldLocks
+			.getStore()
+			?.get(ulwLoopStateLockPath(repoRoot, scope))
+			?.migrations.set(parsed.goalsPath, [
+				{
+					at: iso(),
+					kind: "aggregate_objective_migrated",
+					before: { codexObjective: previousObjective },
+					after: { codexObjective: parsed.codexObjective },
+				},
+			]);
 	}
 	return parsed;
 }
-
-export async function writePlan(repoRoot: string, plan: UlwLoopPlan, scope?: UlwLoopScope): Promise<void> {
-	await mkdir(ulwLoopDir(repoRoot, scope), { recursive: true });
-	const path = ulwLoopGoalsPath(repoRoot, scope);
-	const tmpPath = `${path}.${process.pid}.${Date.now()}.tmp`;
-	await writeFile(tmpPath, `${JSON.stringify(plan, null, 2)}\n`, "utf8");
-	await rename(tmpPath, path);
+export async function readUlwLoopPlan(repoRoot: string, scope?: UlwLoopScope): Promise<UlwLoopPlan> {
+	if (heldLocks.getStore()?.has(ulwLoopStateLockPath(repoRoot, scope))) {
+		assertStateLockOwned(ulwLoopStateLockPath(repoRoot, scope));
+		await materialize(ulwLoopDir(repoRoot, scope));
+	}
+	return readUlwLoopPlanSync(repoRoot, scope);
 }
-
-export async function appendLedger(repoRoot: string, entry: UlwLoopLedgerEntry, scope?: UlwLoopScope): Promise<void> {
-	await mkdir(ulwLoopDir(repoRoot, scope), { recursive: true });
-	await appendFile(ulwLoopLedgerPath(repoRoot, scope), `${JSON.stringify(entry)}\n`, "utf8");
-}
-
-export async function readSteeringLedgerEntries(repoRoot: string, scope?: UlwLoopScope): Promise<UlwLoopLedgerEntry[]> {
-	let raw: string;
+export function listUlwLoopSessionIds(repoRoot: string): readonly string[] {
 	try {
-		raw = await readFile(ulwLoopLedgerPath(repoRoot, scope), "utf8");
-	} catch (error) {
-		if (hasCode(error, "ENOENT")) return [];
-		throw error;
+		return readdirSync(ulwLoopDir(repoRoot), { withFileTypes: true })
+			.filter((entry) => entry.isDirectory())
+			.map((entry) => entry.name)
+			.sort();
+	} catch {
+		return [];
 	}
-	const entries: UlwLoopLedgerEntry[] = [];
-	for (const line of raw.split(/\r?\n/).filter(Boolean)) {
-		const entry: UlwLoopLedgerEntry = JSON.parse(line);
-		if (isSteeringKind(entry.kind)) entries.push(entry);
-	}
-	return entries;
+}
+export async function writePlan(repoRoot: string, plan: UlwLoopPlan, scope?: UlwLoopScope): Promise<void> {
+	await commit(repoRoot, scope, { plan, entries: [] });
+}
+export async function appendLedger(repoRoot: string, entry: UlwLoopLedgerEntry, scope?: UlwLoopScope): Promise<void> {
+	await appendLedgerEntries(repoRoot, [entry], scope);
+}
+export async function appendLedgerEntries(
+	repoRoot: string,
+	entries: readonly UlwLoopLedgerEntry[],
+	scope?: UlwLoopScope,
+): Promise<void> {
+	if (entries.length > 0) await commit(repoRoot, scope, { plan: await readUlwLoopPlan(repoRoot, scope), entries });
+}
+function isSteeringKind(value: unknown): boolean {
+	return (
+		value === "steering_accepted" ||
+		value === "steering_rejected" ||
+		value === "criteria_revised" ||
+		value === "batch_updated"
+	);
+}
+export async function readSteeringLedgerEntries(repoRoot: string, scope?: UlwLoopScope): Promise<UlwLoopLedgerEntry[]> {
+	return readLedger(repoRoot, scope).filter((entry) => isSteeringKind(entry.kind));
+}
+export async function findAcceptedSteeringLedgerEntry(
+	repoRoot: string,
+	key: string,
+	scope?: UlwLoopScope,
+): Promise<UlwLoopLedgerEntry | undefined> {
+	return readLedger(repoRoot, scope).find(
+		(entry) =>
+			isSteeringKind(entry.kind) &&
+			entry.steering?.invariant.accepted === true &&
+			(entry.idempotencyKey === key ||
+				entry.steering.idempotencyKey === key ||
+				entry.steering.promptSignature === key),
+	);
 }

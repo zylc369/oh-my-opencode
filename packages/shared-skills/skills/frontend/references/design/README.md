@@ -7,7 +7,7 @@ You are an elite frontend design engineer. Your only job in this skill is to **r
 
 You are not done when it is clean and correct. You are done when a senior product designer at Linear, Stripe, or Supabase would ship it: surfaces read as real materials (depth, light, layering), color carries a story and a ramp, type has personality, and motion has intent. **Correct-but-flat is a failure, not a finish.** The most common way this skill fails is effort drain: the build, lint, file-size, and test gates eat all the attention and the surface ships at the floor. Spend on the surface like it is the deliverable, because for an expressive brief it is. When you render and find only bug-level issues, you are not done — you are at the start of the part that separates good from generic.
 
-Two things ship flat most often, and both read as "clean but generic": the **hero's focal object** and the **atmosphere**. Render the focal object as a real, lit, dimensional thing — a generated bitmap (imagegen) for a product/brand/object hero, or CSS/SVG art that carries light, shadow, gradient, and depth. Flat geometric primitives (plain circles and rounded rects) for a brand hero are the flat trap. Give the background depth too — gradient, glow, layered light, an atmospheric band, or a real image — not one flat fill. Glass is only one material: a dark glossy brand wants tint+blur+rim+sheen+glow, a bright playful brand wants gradient fills+soft depth shadows+a lit focal object. Pick what the brand calls for, but it must have dimension.
+Two things ship flat most often, and both read as "clean but generic": the **hero's focal object** and the **atmosphere**. Render the focal object as a real, lit, dimensional thing — a generated bitmap (imagegen) for a product/brand/object hero, or CSS/SVG art that carries light, shadow, gradient, and depth. Flat geometric primitives (plain circles and rounded rects) for a brand hero are the flat trap. Give the background depth too — gradient, glow, layered light, an atmospheric band, or a real image — not one flat fill. Glass is only one material: a dark glossy brand wants tint+blur+rim+sheen+glow, a bright playful brand wants gradient fills+soft depth shadows+a lit focal object. Pick what the brand calls for, but it must have dimension. The mechanisms for that atmosphere and for how the headline arrives come from `ambience-skill.md` (Step 10), not from memory.
 
 ## Why route at all
 
@@ -38,12 +38,12 @@ Before touching any UI code, before routing to any reference, before even thinki
 
 1. Read `design-system-architecture.md` — it defines the exact structure.
 2. Identify the branch: greenfield setup, existing UI with implicit patterns/components, or existing UI with no reusable component layer.
-3. **Greenfield setup:** if the user gave no concrete visual reference, use `_INDEX.md` to shortlist 2-3 plausible Layer B references, then deeply load exactly one Layer A style skill and one Layer B brand/design-system reference; use `open-design` only when the curated set has no fit. Treat those references as source material, not mood labels: extract tokens, layout grammar, component anatomy, interaction states, motion, and taste decisions into `DESIGN.md`, then recombine them into project-specific primitives. Customize for the user's product and content, but do not freestyle past the selected references; never copy logos, trademarked assets, or brand-specific copy.
+3. **Greenfield setup:** if the user gave no concrete visual reference, use `_INDEX.md` to shortlist 2-3 plausible Layer B references, then read exactly one Layer A style skill and one Layer B brand/design-system reference in full — every line, no partial reads; use `open-design` only when the curated set has no fit. Open `DESIGN.md` with a `## 0. Research Log` recording each research lane's deliverable (embedded-reference shortlist + pick, lazyweb screens viewed, imagen drafts — see the SKILL.md workflow); a lane with no line did not run. Treat those references as source material, not mood labels: extract tokens, layout grammar, component anatomy, interaction states, motion, and taste decisions into `DESIGN.md`, then recombine them into project-specific primitives. Customize for the user's product and content, but do not freestyle past the selected references; never copy logos, trademarked assets, or brand-specific copy.
    - **Commit a distinctive direction BEFORE extracting tokens.** In 1-2 sentences, name the atmosphere, the signature material, the color story, and the one moment a visitor will remember. For an expressive brief, sketch 2-3 genuinely different directions and pick the boldest one you can defend with the loaded reference; do not average them, because the average IS the generic default this skill exists to beat. A locked, never-revisited one-shot decision is how a page ends up flat.
    - **The reference's distinctive material MUST survive extraction (expressive briefs).** The common failure is loading a rich reference and then distilling it into a generic dark-SaaS token set. Your `DESIGN.md` must carry the *non-default* decisions forward and name which reference each came from: the actual elevation recipe (the specific layers that make a surface read as glass/glossy, not a single blur), a multi-stop perceptual color ramp (not one brand hex reused at varied opacity), the explicit display/body/mono type choices, and one signature interaction. Self-check before writing code: if your `DESIGN.md` could describe any generic dark SaaS, you flattened the reference — go back and put the specific material in.
 4. **Existing UI with implicit patterns/components:** extract the colors, typography, spacing, primitives, states, and motion already in use. Write `DESIGN.md` to codify what exists before changing UI code.
 5. **Existing UI with no reusable component layer:** STOP and ask whether to preserve the current style with copy-nearby edits or extract a `DESIGN.md` plus reusable components first. Do not silently choose the cheaper path or the larger refactor.
-6. **Do not proceed to product screens until `DESIGN.md` exists, Section 5 names the reusable primitives and their states, and each primitive plus required state passes mobile/tablet/desktop visual QA in a component showcase or equivalent state harness.**
+6. Finish the triage at the Primitive Showcase Gate below.
 
 #### If YES design system exists → READ IT, FOLLOW IT
 
@@ -52,7 +52,11 @@ Before touching any UI code, before routing to any reference, before even thinki
 3. If you need a token that doesn't exist, **add it to `DESIGN.md` first**, then use it.
 4. Never introduce raw hex codes, arbitrary px values, or ad-hoc component patterns that bypass the system.
 
-**This gate is non-negotiable. No design system = no UI work. Period.**
+**The Design System Gate is non-negotiable. No design system = no UI work. Period.**
+
+### Primitive Showcase Gate (MANDATORY)
+
+**Do not proceed to product screens until `DESIGN.md` exists, Section 5 names the reusable primitives and their states, and each primitive plus required state passes mobile/tablet/desktop visual QA in a component showcase or equivalent state harness.** Skipping this gate ships ad-hoc-styled product screens and re-enters the redesign loop.
 
 
 ## Phase 0.5 — React Dev Tooling Gate (MANDATORY for React projects)
@@ -116,7 +120,7 @@ Do NOT let an expressive brief fall through to `taste-skill`. Then map the phras
 | "minimal", "clean", "Notion-like", "Linear-like", "editorial", "boring is good" | `minimalist-skill.md` |
 | "brutalist", "raw", "Swiss", "experimental", "industrial", "anti-design", "unstyled" | `brutalist-skill.md` |
 | "premium", "luxury", "calm", "expensive", "elegant", "spa", "boutique", "glossy", "glassy", "liquid glass", "startup-grade", "make it beautiful/pretty" | `soft-skill.md` + a high-craft Layer B (`supabase` / `linear.app` / `vercel` / `stripe`) |
-| "Awwwards-level", "wow factor", "magnetic", "scroll-triggered", "high-variance", "cinematic", "make it crazy" | `gpt-tasteskill.md` |
+| "Awwwards-level", "wow factor", "magnetic", "scroll-triggered", "high-variance", "cinematic", "make it crazy" | `gpt-tasteskill.md` + `ambience-skill.md` for the backgrounds and scroll scenes its sections 5 and 7 demand |
 | Neutral or operational — internal tool, dashboard, admin, "just make it usable" with no surface ambition | `taste-skill.md` as Layer A, plus the greenfield `_INDEX.md` shortlist → exactly one Layer B reference |
 
 You may also load a brand DESIGN.md from Layer B as a *concrete reference* if the user's mood maps cleanly (see the "Mood-based shortcuts" section in `_INDEX.md`).
@@ -157,13 +161,31 @@ Triggers: "generate a mockup image", "create a brand kit board", "design referen
 
 Triggers: "Google Stitch", "compatible with Stitch", "also write a DESIGN.md", "give me the design as a doc".
 
-**Action:** Add `stitch-skill.md` on top of whatever you loaded in Steps 1–4.
+**Action:** Add `stitch-skill.md` on top of whatever you loaded in Steps 1–4. For the shape of a finished export, see the worked example in `stitch-design-example.md`.
 
 ### Step 7 — The agent has been lazy
 
 Triggers (mid-conversation, not initial): "you keep leaving placeholders", "stop with the // TODO", "finish the implementation", "no half-done components".
 
 **Action:** Add `output-skill.md` on top of whatever is currently loaded. This stacks cleanly — it is purely about output completeness, not visual style.
+
+### Step 8 — Is the screen an app shell, not a scroll-the-page site?
+
+Triggers: dashboard, settings, mail/inbox, list-detail, command surface, split panes, fixed sidebar + scrolling body, admin console — or the user reports a layout that breaks when content gets long, empty, or unbroken (panel won't scroll, footer pushed off-screen, horizontal overflow on mobile).
+
+**Action:** Add `layout-skill.md` on top of whatever style skill you selected in Steps 1-2. It carries scroll-ownership doctrine, the two silently-failing CSS contracts (`min-block-size: 0` scroll shells, `minmax(min(…),100%)` grids), the named-primitive vocabulary, container-vs-viewport routing, and the content-stress matrix. It adds no visual direction — the style skill still owns taste. Skip it for pure scroll-the-document marketing pages, where `taste-skill` layout guidance already fits.
+
+### Step 9 — Does the work add or change interaction or motion?
+
+Triggers: micro-interactions, animated components, transitions, gestures, hover/press/focus/state feedback, loading/success/error morphs, animated tabs/menus/modals/drawers/toasts — or "make it feel alive", "polish the interactions", "add micro-interactions".
+
+**Action:** Add `interaction-skill.md` on top of whatever style skill you selected. It anchors interaction design to the beui.dev catalog: find the nearest pattern, read its real source through the file's curl recipe, extract the mechanism (spring config, layout strategy, enter/exit order, reduced-motion path), and adapt the values to `DESIGN.md`. It owns interaction mechanics only — no visual direction — so it stacks cleanly, like `layout-skill.md`.
+
+### Step 10 — Does the work add a hero atmosphere, background, typographic reveal, or card surface effect?
+
+Triggers: an animated, shader, particle, or grid background; a hero that must feel atmospheric or dimensional; text that splits, blurs, shimmers, types, counts, scrambles, or loops; scroll-triggered chapters; spotlight / tilt / glare / glowing-border cards — or "make the hero stunning", "add a living background", "animate the headline".
+
+**Action:** Add `ambience-skill.md` on top of whatever style skill you selected. It anchors ambience to the react-bits catalog: find the nearest pattern in its intent map, read its real source through the file's curl recipe, extract the mechanism (render loop and its driver, shader uniforms or split strategy, sizing, dependencies), then run its retrofit checklist — reduced-motion static state, off-screen pause, no scroll listeners, compositor-only properties, `DESIGN.md` tokens, lazy-loaded budget. One atmosphere per hero; cursor effects stay quarantined to `gpt-tasteskill.md` briefs. It owns ambience mechanics only — no visual direction — and never vendors react-bits code.
 
 ## Stacking rules (read this once, internalize it)
 
@@ -173,11 +195,14 @@ Triggers (mid-conversation, not initial): "you keep leaving placeholders", "stop
 4. **`redesign-skill.md` replaces a style-skill** when the task is auditing, not building. Stack a Layer B brand if the user wants a specific direction.
 5. **`image-to-code-skill.md` pairs with one imagegen skill** for the full flow.
 6. **Layer B (brand DESIGN.md) is orthogonal to Layer A.** You can pair any Layer A skill with any Layer B brand. Use Layer B as the source of color/type/component tokens; let Layer A drive the execution discipline.
+7. **`layout-skill.md` stacks on top of any style skill** for app-shell / dashboard / split-pane work. It owns spatial structure and scroll ownership only — no visual direction — so it never conflicts with the style skill you picked.
+8. **`interaction-skill.md` stacks on top of any style skill** for interaction/motion work. It owns interaction mechanics — springs, layout morphs, enter/exit orchestration, reduced motion — and no visual direction, so it never conflicts with the style skill either.
+9. **`ambience-skill.md` stacks on top of any style skill** for hero atmosphere, backgrounds, typographic reveals, scroll chapters, and card surface effects. It owns ambience mechanics and their retrofit contract — no visual direction — so it stacks with the style skill and with `interaction-skill.md` at the same time.
 
 ## Anti-patterns — do not do these
 
 - **Don't load nothing and just freestyle.** That produces the exact "generic AI SaaS slop" — purple-blue gradient backgrounds, rounded-2xl-on-everything, three feature cards in a grid, generic Inter font, lorem ipsum. The skills exist precisely to prevent this.
-- **Don't load five files "to be safe".** That blows context and creates contradictory rules. Pick deliberately.
+- **Don't mark state with a coloured accent border.** `border-l-2 border-primary` on the selected row, a primary outline on the focused card — on a rounded surface that is the generic AI tell. State is ink-alpha washes, a glyph for selection, tonal layering for focus; `focus-visible` rings are the only coloured edge. Includes pre-existing instances on surfaces you touch.
 - **Don't ignore the user's named brand.** If they say "Linear-style" and you build something that doesn't match Linear's actual aesthetic (purple, ultra-tight spacing, mono accents, etc.), you have failed the routing.
 - **Don't apply a Layer B brand verbatim if the project is not that brand.** The DESIGN.md captures *inspiration* — extract the tokens (palette, type scale, component patterns) and apply them to the project's own content. Do not copy logos or trademarked imagery.
 - **Don't use imagegen skills to write code.** They are explicitly image-only. The agent has been observed trying to "describe" the image as React code — that is the wrong skill, switch to `image-to-code-skill.md` instead.
@@ -196,7 +221,7 @@ Once references are loaded, before writing any UI code:
 7. **Match the project's existing patterns FIRST.** If the codebase already uses CSS Modules, don't introduce Tailwind. If it uses styled-components, don't introduce CSS-in-JS variants. The references guide *style*, not *infrastructure*.
 8. **All tokens trace back to `DESIGN.md`.** No orphan hex codes, no magic px values. If you need a new token, update `DESIGN.md` first.
 9. **New reusable patterns (used 2+ times) get documented back into `DESIGN.md` Section 5.**
-10. **No generic-default drift (expressive briefs).** The shipped CSS must use the `DESIGN.md` material, not the model's priors. Load the declared fonts (do not silently fall back to Inter or system fonts), build elevated surfaces from the declared multi-layer recipe (not a lone `backdrop-filter: blur`), and color from the ramp stops (not one tint at varied opacity). Grep your styles before QA: finding `Inter`, a single blur on "glass", or one brand hex reused everywhere means you regressed to priors — fix it before declaring done.
+10. **No generic-default drift (expressive briefs).** The shipped CSS must use the `DESIGN.md` material, not the model's priors. Load the declared fonts (do not silently fall back to Inter or system fonts), build elevated surfaces from the declared multi-layer recipe (not a lone `backdrop-filter: blur`), and color from the ramp stops (not one tint at varied opacity). Grep your styles before QA: finding `Inter`, a single blur on "glass", one brand hex reused everywhere, or a coloured accent border marking selected/focused state (`border-l-2 border-primary` et al) means you regressed to priors — fix it before declaring done.
 
 ## Quick lookup table — most common requests
 
@@ -214,6 +239,10 @@ Once references are loaded, before writing any UI code:
 | "Generate a brand identity board for {company}" | `imagegen-brandkit.md` |
 | "Stop using placeholders" | Add `output-skill.md` to current stack |
 | "Also output a DESIGN.md doc" | Add `stitch-skill.md` to current stack |
+| "Build a dashboard / settings / inbox / app shell" | one style skill (usually `taste-skill.md`) + `layout-skill.md` |
+| "Panel won't scroll / footer pushed off-screen / mobile overflow" | Add `layout-skill.md` to current stack |
+| "Add micro-interactions / animate this / make it feel alive" | Add `interaction-skill.md` to current stack |
+| "Make the hero stunning / add an animated background / animate the headline / spotlight cards" | Add `ambience-skill.md` to current stack |
 
 ## Phase Final — Design QA (MANDATORY, runs after implementation)
 
@@ -223,6 +252,7 @@ This skill adds only the design-taste judgments `/visual-qa` cannot make for you
 
 1. **Two kinds of failure count equally — fix both, then re-check.** Defects: clipping, wrong font, missing state, jank. Flatness: a surface that reads generic next to the loaded reference. When the render is bug-free but flat, you are NOT done — RAISE the design: deepen the material layering, give the color a real perceptual ramp (multiple stops / OKLCH, not one tint at varied opacity), render the hero focal object as real dimensional material (a generated bitmap, or real light/shadow/gradient/depth — never flat geometric primitives), and add the one signature moment. Patching only bugs while the surface stays at the floor is the single most common way this skill ships clean-but-generic work.
 2. **Motion serves meaning; slop animation is forbidden.** Every interactive element must communicate its affordance and state changes — but a hover that changes nothing, motion on a non-interactive element, or a decorative micro-animation with no informational purpose is slop. Do not add it, and treat any you find as a defect. The hero may carry one signature moment; the rest of the surface earns motion only where it signals interaction or state.
+3. **A coloured accent border marking selected/focused/active is a defect, not a style choice.** Treat every `border-{side}-{primary|warning|destructive|success}` or accent-width rule used for state as a bug to fix — encode with an ink-alpha wash and a glyph — including pre-existing instances on the surface you touched. `focus-visible` rings are exempt.
 
 Report "done" only when `/visual-qa` has passed on fresh evidence AND neither a visual bug nor a floor-level or slop-laden surface remains.
 

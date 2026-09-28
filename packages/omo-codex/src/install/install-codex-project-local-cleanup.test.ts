@@ -98,9 +98,12 @@ describe("install-codex project-local cleanup", () => {
     const repoRoot = await createPackagedCodexRepoRoot()
     await mkdir(projectDirectory, { recursive: true })
     await mkdir(codexHome, { recursive: true })
+    // V2 is active via enabled = true, so the legacy agents.max_threads key is removed.
     await writeFile(
       globalConfigPath,
       [
+        'model = "gpt-5.5"',
+        "",
         "[features.multi_agent_v2]",
         "enabled = true",
         "",
@@ -127,9 +130,9 @@ describe("install-codex project-local cleanup", () => {
     expect(result.projectCleanup.configPath).toBeNull()
     expect(result.projectCleanup.changed).toBe(false)
     const content = await readFile(globalConfigPath, "utf8")
-    expect(content).toContain("max_threads = 1000")
-    expect(content).not.toContain("max_threads = 12")
+    expect(content).not.toMatch(/^\s*max_threads\s*=/m)
     expect(content).toContain("max_depth = 5")
+    expect(content).not.toMatch(/^\s*max_concurrent_threads_per_session\s*=/m)
   }, { timeout: 30_000 })
 
   test("#given project cleanup hits a filesystem edge #when installing Codex Light #then install succeeds and reports skipped cleanup", async () => {

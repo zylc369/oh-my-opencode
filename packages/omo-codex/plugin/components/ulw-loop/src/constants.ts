@@ -2,6 +2,7 @@ export const ULW_LOOP_DIR = ".omo/ulw-loop";
 export const ULW_LOOP_BRIEF = "brief.md";
 export const ULW_LOOP_GOALS = "goals.json";
 export const ULW_LOOP_LEDGER = "ledger.jsonl";
+export const ULW_LOOP_STATE_LOCK = ".state.lock";
 
 export type UlwLoopStatus =
 	| "pending"
@@ -60,5 +61,7 @@ export const ULW_LOOP_LEDGER_EVENT_KINDS = [
 	"criterion_failed",
 	"criterion_blocked",
 	"criteria_revised",
+	"batch_closed",
+	"batch_updated",
 ] as const satisfies readonly string[];
 export type UlwLoopLedgerEventKind = (typeof ULW_LOOP_LEDGER_EVENT_KINDS)[number];

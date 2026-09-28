@@ -4,7 +4,7 @@ import {
   getSessionPromptParams,
 } from "../../shared/session-prompt-params-state"
 import { releaseAllPromptAsyncReservationsForTesting } from "../../shared/prompt-async-gate"
-import { buildFallbackBody, createTask, isAgentNotFoundError, startTask } from "./spawner"
+import { buildFallbackBody, createTask, isAgentNotFoundError, resumeTask, startTask } from "./spawner"
 import type { BackgroundTask } from "./types"
 
 type PromptRequest = {
@@ -38,6 +38,50 @@ async function waitForCondition(
     await new Promise((r) => setTimeout(r, intervalMs))
   }
 }
+
+describe("background-agent spawner resume guard", () => {
+  test("rejects a running task before acquiring concurrency or dispatching a prompt", async () => {
+    //#given
+    const acquire = mock(async () => {})
+    const promptAsync = mock(async () => ({}))
+    const sessionId = "session-running-resume"
+    const task: BackgroundTask = {
+      id: "task-running-resume",
+      sessionId,
+      parentSessionId: "parent-session-original",
+      parentMessageId: "parent-message-original",
+      description: "running task",
+      prompt: "original prompt",
+      agent: "explore",
+      status: "running",
+      startedAt: new Date(),
+      concurrencyGroup: "explore",
+    }
+    const input = {
+      sessionId,
+      prompt: "continuation prompt",
+      parentSessionId: "parent-session-new",
+      parentMessageId: "parent-message-new",
+    }
+
+    //#when
+    await expect(resumeTask(task, input, {
+      client: { session: { promptAsync } },
+      concurrencyManager: { acquire, release: () => {} },
+      directory: "/tmp/test",
+      onTaskError: () => {},
+    } as never)).rejects.toThrow(
+      "Task task-running-resume is currently running and cannot accept a continuation prompt",
+    )
+
+    //#then
+    expect(acquire).not.toHaveBeenCalled()
+    expect(promptAsync).not.toHaveBeenCalled()
+    expect(task.status).toBe("running")
+    expect(task.parentSessionId).toBe("parent-session-original")
+    expect(task.parentMessageId).toBe("parent-message-original")
+  })
+})
 
 describe("background-agent spawner agent-not-found fallback", () => {
   afterEach(() => {
@@ -619,6 +663,69 @@ describe("background-agent spawner fallback model promotion", () => {
     // then
     expect(promptCalls).toHaveLength(1)
     expect(promptCalls[0]?.query).toEqual({ directory: "/parent/dir" })
+  })
+
+  test("creates and prompts the child in input.cwd", async () => {
+    // given
+    const getCalls: Array<Record<string, unknown>> = []
+    const createCalls: Array<Record<string, unknown>> = []
+    const promptCalls: Array<Record<string, unknown>> = []
+
+    const client = {
+      session: {
+        get: async (input: Record<string, unknown>) => {
+          getCalls.push(input)
+          return { data: { directory: "/parent/dir" } }
+        },
+        create: async (input: Record<string, unknown>) => {
+          createCalls.push(input)
+          return { data: { id: "ses_child_cwd" } }
+        },
+        promptAsync: async (input: Record<string, unknown>) => {
+          promptCalls.push(input)
+          return {}
+        },
+      },
+    }
+
+    const task = createTask({
+      description: "Test task",
+      prompt: "Do work",
+      agent: "sisyphus-junior",
+      parentSessionId: "ses_parent",
+      parentMessageId: "msg_parent",
+      cwd: "/parent/dir-fix-1",
+    })
+
+    const item = {
+      task,
+      input: {
+        description: task.description,
+        prompt: task.prompt,
+        agent: task.agent,
+        parentSessionId: task.parentSessionId,
+        parentMessageId: task.parentMessageId,
+        cwd: task.cwd,
+      },
+    }
+
+    // when
+    await startTask(item as never, {
+      client: client as never,
+      directory: "/fallback",
+      concurrencyManager: { release: () => {} } as never,
+      tmuxEnabled: false,
+      onTaskError: () => {},
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    // then
+    expect(task.cwd).toBe("/parent/dir-fix-1")
+    expect(getCalls).toEqual([{ path: { id: "ses_parent" }, query: { directory: "/fallback" } }])
+    expect(createCalls).toHaveLength(1)
+    expect(createCalls[0]?.query).toEqual({ directory: "/parent/dir-fix-1" })
+    expect(promptCalls).toHaveLength(1)
+    expect(promptCalls[0]?.query).toEqual({ directory: "/parent/dir-fix-1" })
   })
 
   test("strips leading zwsp from prompt body agent before promptAsync", async () => {

@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PassThrough } from "node:stream";
 import test from "node:test";
 
-import { resolveAutoUpdatePlan, resolveLazyCodexUpdatePlan, runAutoUpdateCheck } from "../scripts/auto-update.mjs";
+import { readSessionModelFromStdin, resolveAutoUpdatePlan, resolveLazyCodexUpdatePlan, runAutoUpdateCheck } from "../scripts/auto-update.mjs";
 import { detectInstallFlow } from "../scripts/install-flow.mjs";
 import { resolveSpawnInvocation } from "../scripts/spawn-command.mjs";
 
@@ -20,6 +21,12 @@ function autoUpdateEnv(root, extra = {}) {
 	};
 }
 
+function stdinFrom(payload) {
+	const stream = new PassThrough();
+	stream.end(payload);
+	return stream;
+}
+
 test("#given auto update is disabled #when resolving plan #then no command is scheduled", () => {
 	const plan = resolveAutoUpdatePlan({
 		env: { LAZYCODEX_AUTO_UPDATE_DISABLED: "1" },
@@ -29,6 +36,33 @@ test("#given auto update is disabled #when resolving plan #then no command is sc
 
 	assert.equal(plan.shouldRun, false);
 	assert.equal(plan.reason, "disabled");
+});
+
+test("#given SessionStart payload with model #when reading stdin #then returns the model", async () => {
+	const payload = JSON.stringify({
+		hook_event_name: "SessionStart",
+		session_id: "s-1",
+		cwd: "/tmp",
+		model: "gpt-5.6-terra",
+		permission_mode: "default",
+		source: "startup",
+	});
+
+	assert.equal(await readSessionModelFromStdin(stdinFrom(payload)), "gpt-5.6-terra");
+});
+
+test("#given empty or malformed stdin #when reading session model #then returns null", async () => {
+	assert.equal(await readSessionModelFromStdin(stdinFrom("")), null);
+	assert.equal(await readSessionModelFromStdin(stdinFrom("not json")), null);
+	assert.equal(await readSessionModelFromStdin(stdinFrom(JSON.stringify({ model: "  " }))), null);
+	assert.equal(await readSessionModelFromStdin(stdinFrom(JSON.stringify({ session_id: "s-1" }))), null);
+	assert.equal(await readSessionModelFromStdin(null), null);
+});
+
+test("#given a TTY stdin #when reading session model #then returns null without waiting", async () => {
+	const stream = stdinFrom("{}");
+	stream.isTTY = true;
+	assert.equal(await readSessionModelFromStdin(stream), null);
 });
 
 test("#given stale state #when resolving plan #then installer update command is scheduled", () => {
@@ -191,7 +225,7 @@ test("#given test command override #when running check #then records state and l
 			toVersion: "1.0.1",
 		},
 	]);
-	assert.match(await readFile(join(env.CODEX_HOME, "config.toml"), "utf8"), /model = "gpt-5\.5"/);
+	assert.match(await readFile(join(env.CODEX_HOME, "config.toml"), "utf8"), /model = "gpt-6-astra"/);
 });
 
 test("#given failed waited update #when retry window passes #then next update is not blocked by success throttle", async () => {
@@ -245,7 +279,7 @@ test("#given active lock #when running check #then skips concurrent update", asy
 
 	assert.equal(result.started, false);
 	assert.equal(result.reason, "locked");
-	assert.match(await readFile(join(root, "codex-home", "config.toml"), "utf8"), /model_context_window = 400000/);
+	assert.match(await readFile(join(root, "codex-home", "config.toml"), "utf8"), /model_context_window = 600000/);
 });
 
 test("#given stale lock #when running check #then removes lock and runs update", async () => {
@@ -611,35 +645,10 @@ test("#given throttled updater and stale Codex config #when running check #then 
 	const content = await readFile(join(codexHome, "config.toml"), "utf8");
 	assert.equal(result.started, false);
 	assert.equal(result.reason, "throttled");
-	assert.match(content, /model = "gpt-5\.5"/);
-	assert.match(content, /model_context_window = 400000/);
+	assert.match(content, /model = "gpt-6-astra"/);
+	assert.match(content, /model_context_window = 600000/);
 	assert.match(content, /model_reasoning_effort = "high"/);
 	assert.match(content, /plan_mode_reasoning_effort = "xhigh"/);
 	assert.doesNotMatch(content, /gpt-5\.2/);
 });
 
-test("#given throttled updater and no OMO SOT #when running check #then OMO SOT seed migration still runs", async () => {
-	const root = await mkdtemp(join(tmpdir(), "lazycodex-auto-update-omo-sot-"));
-	const statePath = join(root, "state.json");
-	const home = join(root, "home");
-	await writeFile(statePath, JSON.stringify({ lastCheckedAt: 99_999 }, null, 2));
-	await mkdir(join(root, "codex-home"), { recursive: true });
-
-	const result = await runAutoUpdateCheck({
-		env: {
-			CODEX_HOME: join(root, "codex-home"),
-			HOME: home,
-			CODEX_CODEGRAPH_ENABLED: "0",
-			LAZYCODEX_MODEL_CATALOG_STATE_PATH: join(root, "model-state.json"),
-			LAZYCODEX_AUTO_UPDATE_STATE_PATH: statePath,
-			LAZYCODEX_AUTO_UPDATE_LOG_PATH: join(root, "auto-update.log"),
-		},
-		now: 100_000,
-	});
-
-	const content = await readFile(join(home, ".omo", "config.jsonc"), "utf8");
-	assert.equal(result.started, false);
-	assert.equal(result.reason, "throttled");
-	assert.match(content, /"\[codex\]"/);
-	assert.match(content, /"\[opencode\]"/);
-});

@@ -23,7 +23,6 @@ export { createClaudeCodeHooksHook } from "./claude-code-hooks";
 export { createRulesInjectorHook } from "./rules-injector";
 export { createBackgroundNotificationHook } from "./background-notification"
 export { createAutoUpdateCheckerHook } from "./auto-update-checker";
-export { createCodegraphBootstrapHook } from "./codegraph-bootstrap";
 export { createAstGrepSgProvisionHook } from "./ast-grep-sg-provision";
 
 export { createAgentUsageReminderHook } from "./agent-usage-reminder";
@@ -36,6 +35,7 @@ export { createTeamModeStatusInjector } from "./team-mode-status-injector";
 export { createToolPairValidatorHook } from "./tool-pair-validator";
 export { createCategorySkillReminderHook } from "./category-skill-reminder";
 export { createRalphLoopHook, type RalphLoopHook } from "./ralph-loop";
+export { createGoalHook, type GoalHook } from "./goal";
 export { createNoSisyphusGptHook } from "./no-sisyphus-gpt";
 export { createNoHephaestusNonGptHook } from "./no-hephaestus-non-gpt";
 export { createHephaestusAgentsMdInjectorHook } from "./hephaestus-agents-md-injector";
@@ -45,7 +45,7 @@ export { createEditErrorRecoveryHook } from "./edit-error-recovery";
 export { createPrometheusMdOnlyHook } from "./prometheus-md-only";
 export { createSisyphusJuniorNotepadHook } from "./sisyphus-junior-notepad";
 export { createTaskResumeInfoHook } from "./task-resume-info";
-export { createStartWorkHook } from "./start-work";
+export { createUlwExecuteHook } from "./ulw-execute";
 export { createAtlasHook } from "./atlas";
 export { createTeamToolGating } from "./team-tool-gating"
 export { createDelegateTaskRetryHook } from "./delegate-task-retry";
@@ -65,6 +65,7 @@ export { createReadImageResizerHook } from "./read-image-resizer"
 export { createTodoDescriptionOverrideHook } from "./todo-description-override"
 export { createWebFetchRedirectGuardHook } from "./webfetch-redirect-guard"
 export { createLegacyPluginToastHook } from "./legacy-plugin-toast"
+export { createNativeEditionNudgeHook } from "./native-edition-nudge"
 export { createFsyncSkipWarningHook } from "./fsync-skip-warning"
 export { createNotepadWriteGuardHook } from "./notepad-write-guard"
 export { createPlanFormatValidatorHook } from "./plan-format-validator"

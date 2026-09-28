@@ -1,6 +1,6 @@
 # @oh-my-opencode/omo-codex
 
-Codex harness adapter for **oh-my-openagent**. Brings the OMO experience (rules injection, comment checker, plugin-scoped MCPs, ultrawork, ulw-loop, start-work continuation, telemetry) into [OpenAI Codex CLI](https://github.com/openai/codex) through Codex's native plugin system.
+Codex harness adapter for **oh-my-openagent**. Brings the OMO experience (rules injection, comment checker, plugin-scoped MCPs, ultrawork, ulw-loop, ulw-execute continuation, telemetry) into [OpenAI Codex CLI](https://github.com/openai/codex) through Codex's native plugin system.
 
 ## Layout
 
@@ -19,8 +19,8 @@ Codex harness adapter for **oh-my-openagent**. Brings the OMO experience (rules 
 - `lsp` (TypeScript + LSP MCP) - exposes LSP diagnostics, navigation, symbols, rename via MCP + post-edit hooks.
 - `git-bash` (TypeScript + Git Bash MCP) - exposes the Windows-only `git_bash` MCP and reminds Codex on the first shell-like call, including the first one after compaction.
 - `ultrawork` (TypeScript) - keyword detector (`ulw` / `ultrawork`) that injects the full ultrawork directive; bundled agent TOML files are installed into `CODEX_HOME/agents`.
-- `ulw-loop` (TypeScript) - durable multi-goal orchestration backed by `.omo/ulw-loop/` evidence audit.
-- `start-work-continuation` (TypeScript) - `Stop` / `SubagentStop` continuation hook for `.omo/boulder.json` start-work plans.
+- `ulw-loop` (TypeScript) - durable multi-goal orchestration backed by `.omo/ulw-loop/` evidence audit; `PreToolUse` spawn guards (fan-out cap + gate-artifact preflight) and a `Stop` auto-resume hook.
+- `ulw-execute-continuation` (TypeScript) - `Stop` / `SubagentStop` continuation hook for `.omo/boulder.json` ulw-execute plans.
 - `telemetry` (TypeScript) - anonymous daily active telemetry hook.
 
 ## Install
@@ -35,12 +35,37 @@ npx lazycodex-ai install --no-tui --codex-autonomous
 
 To install **both** the Ultimate edition (OpenCode plugin) and the Light edition (this package) at once, use `--platform=both`.
 
-The installer copies the built plugin into `~/.codex/plugins/cache/sisyphuslabs/omo/<version>/`, writes the local marketplace snapshot under `~/.codex/.tmp/marketplaces/sisyphuslabs/plugins/omo/`, copies bundled agent TOMLs into `~/.codex/agents/`, enables `omo@sisyphuslabs` in `~/.codex/config.toml`, writes the valid `[features.multi_agent_v2]` limit table without enabling MultiAgentV2, and registers the `sisyphuslabs` marketplace from the local built cache. If an older config used `[features] multi_agent_v2 = false`, the installer preserves that explicit disable as table-form `enabled = false`. `lazycodex-ai` is the npm/bin alias and `lazycodex` is the marketplace repository; the marketplace identity remains `sisyphuslabs`.
+The installer copies the built plugin into `~/.codex/plugins/cache/sisyphuslabs/omo/<version>/`, writes the local marketplace snapshot under `~/.codex/.tmp/marketplaces/sisyphuslabs/plugins/omo/`, copies bundled agent TOMLs into `~/.codex/agents/`, enables `omo@sisyphuslabs` in `~/.codex/config.toml`, and registers the `sisyphuslabs` marketplace from the local built cache. It never enables MultiAgentV2 and never writes or raises subagent thread caps. `agents.max_threads` and `features.multi_agent_v2.max_concurrent_threads_per_session` are not inserted; values LazyCodex wrote in earlier releases (`1000`, `16`) are removed so Codex stock defaults apply. One exception: when the root model prefers `multi_agent_v2` (the `gpt-6-astra` default), the V1-only `agents.max_threads` key is removed whatever its value, because Codex rejects it while V2 is active. Every other user-set value, including your own `max_concurrent_threads_per_session`, is left as is. If an older config used `[features] multi_agent_v2 = false`, the installer preserves that explicit disable as table-form `enabled = false`.
+
+### Default model
+
+The managed catalog (`plugin/model-catalog.json`, version `2026-09-08.gpt-6-astra-600k-high`) sets the root model to `gpt-6-astra` with `model_context_window = 600000`, `model_reasoning_effort = "high"`, and `plan_mode_reasoning_effort = "xhigh"`. The 12 bundled agent TOMLs also run on `gpt-6-astra`, each keeping its own reasoning effort. A config still on a managed legacy profile (the gpt-5.5 entries, or `legacy.gpt-5.6-sol-650k-high` for `gpt-5.6-sol` at 650k / high / xhigh) is upgraded to the current values; any other root model you picked yourself is preserved. `lazycodex-ai` is the npm/bin alias and `lazycodex` is the marketplace repository; the marketplace identity remains `sisyphuslabs`.
 
 To remove managed Codex Light state, run `npx lazycodex-ai uninstall`. The backward-compatible alias is `npx lazycodex-ai cleanup`. Uninstall removes managed `sisyphuslabs` cache/marketplace directories, strips OMO marketplace/plugin/hook-state config blocks with a backup, removes managed agent TOML files from `~/.codex/agents/`, and repairs the known project-local legacy `.codex/config.toml` conflict while leaving project-owned `.codex` files in place.
 
+### Local dev install (dogfood the source build)
+
+To run **this repo's local build** on your real `~/.codex` instead of the published package, stamped so you can see at a glance you're on a dev build:
+
+```bash
+bun run install:codex-dev            # uninstalls current, installs repo HEAD as version "dev"
+bun run script/install-codex-dev.ts --version=dev-$(git rev-parse --short HEAD)  # custom stamp
+bun run script/install-codex-dev.ts --no-uninstall   # skip the uninstall step
+```
+
+This sets `LAZYCODEX_DEV_VERSION` (default `dev`), which threads through `resolveLazyCodexPluginVersion` so the plugin version stamp becomes that value everywhere it appears: the cache dir (`~/.codex/plugins/cache/sisyphuslabs/omo/dev/`), `.codex-plugin/plugin.json`, the stamped `package.json`, and — most visibly — the hook status prefix Codex prints every turn (`(OmO dev) ...`). `omo get-local-version` renders a `[DEV]` badge and skips the npm update check for any non-semver stamp. A plain `LAZYCODEX_DEV_VERSION`-less `lazycodex install` is unchanged. This writes to your REAL `~/.codex`; for isolated QA use the throwaway-`CODEX_HOME` flow instead.
+
+
 The Codex plugin bundle includes Context7 as a default MCP in its `.mcp.json`, using the hosted `https://mcp.context7.com/mcp` endpoint. The installer enables the `omo@sisyphuslabs` plugin MCP policy for Context7 while leaving any existing user-level `[mcp_servers.context7]` block untouched.
-The same plugin-scoped MCP manifest also bundles `grep_app`, `git_bash`, `lsp`, and `codegraph`. The ast-grep capability ships as the `ast-grep` skill and provisions `sg` into the Codex runtime. `git_bash` is enabled only on Windows by default. `codegraph` is enabled only when the installer can resolve a supported local Node runtime for CodeGraph; unsupported runtimes disable that MCP policy while keeping `omo@sisyphuslabs` enabled.
+The same plugin-scoped MCP manifest also bundles `grep_app`, `git_bash`, and `lsp`. The ast-grep capability ships as the `ast-grep` skill and provisions `sg` into the Codex runtime. `git_bash` is enabled only on Windows by default.
+
+### Process hygiene
+
+Process lifecycle is self-cleaning and always on (no config keys):
+
+- MCP server processes (`lsp`, `git_bash`) run a parent-liveness watchdog and exit when their parent process dies, so a crashed harness does not leave servers behind.
+- A newly started lsp daemon reaps running daemons left over from older versions at startup.
+- A best-effort family sweep removes orphaned lsp processes at startup on every adapter (the Codex `SessionStart` hook, OpenCode plugin startup, and Senpi session start) and self-throttles via stamp files.
 
 Native Windows installs discover Git Bash before the installer mutates `~/.codex/`. The installer checks `OMO_CODEX_GIT_BASH_PATH`, standard Git for Windows locations such as `C:\Program Files\Git\bin\bash.exe`, and then PATH. If Git Bash is still missing, it prints the install guidance shown here and stops without running `winget` or changing system dependencies:
 
@@ -62,6 +87,27 @@ $env:OMO_CODEX_GIT_BASH_PATH = "C:\Program Files\Git\bin\bash.exe"
 The installer does not write a global Codex shell config. On Windows it enables the plugin MCP policy for `git_bash`; on non-Windows it keeps the manifest bundled but writes `enabled = false` for that MCP server. The Git Bash hook injects fixed guidance before the first Codex shell-like `Bash` hook call in a session, and again before the first shell-like call after `PostCompact`, recommending `git_bash` before built-in `exec_command`.
 
 To install both editions in one command, use `--platform=both`.
+
+### Subagent model and reasoning
+
+The bundled agent TOMLs ship LazyCodex defaults (currently `gpt-6-astra`). To pick another model per role durably, set it in `~/.omo/omo.jsonc`; every reinstall and marketplace bootstrap re-applies it, and deleting the entry restores the bundled default:
+
+```jsonc
+{ "[codex]": { "agents": { "explorer": { "model": "gpt-6-luna", "reasoning": "low" } } } }
+```
+
+A `model` or `model_reasoning_effort` you edit directly in `~/.codex/agents/<role>.toml` is also kept across updates; a model LazyCodex itself wrote there follows the new bundled default. See [`docs/reference/omo-json.md`](../../docs/reference/omo-json.md#codex-managed-agent-roles).
+
+### Subagent service tier (explorer/librarian)
+
+The bundled `explorer` and `librarian` agent TOMLs ship with `service_tier = "fast"` so recon subagents run on the cheaper Fast tier by default. To opt out, edit the tier in your installed agent files and the installer will preserve your choice across every reinstall and bootstrap:
+
+```toml
+# ~/.codex/agents/explorer.toml (and librarian.toml)
+service_tier = "standard"   # use the default/parent tier instead of Fast
+```
+
+Delete the `service_tier` line entirely to inherit the parent session's tier. On reinstall the bootstrap captures your current tier and re-applies it after relinking the bundled agents, so a changed or removed tier is never silently reset back to `fast`.
 
 ## Telemetry
 
@@ -101,4 +147,4 @@ The bundled component implementations come from the Sisyphus Labs Codex plugin f
 - [code-yeongyu/codex-lsp](https://github.com/code-yeongyu/codex-lsp)
 - [code-yeongyu/codex-ultrawork](https://github.com/code-yeongyu/codex-ultrawork)
 - [code-yeongyu/codex-ulw-loop](https://github.com/code-yeongyu/codex-ulw-loop)
-- [code-yeongyu/codex-start-work-continuation](https://github.com/code-yeongyu/codex-start-work-continuation)
+- [code-yeongyu/codex-ulw-execute-continuation](https://github.com/code-yeongyu/codex-ulw-execute-continuation)

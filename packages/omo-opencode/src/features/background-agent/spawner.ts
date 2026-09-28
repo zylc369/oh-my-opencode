@@ -2,7 +2,6 @@ import { log, promptWithRetryInDirectory } from "../../shared"
 import { stripAgentListSortPrefix } from "../../shared/agent-display-names"
 import { applySessionPromptParams } from "../../shared/session-prompt-params-helpers"
 import { setSessionTools } from "../../shared/session-tools-store"
-import { isInsideTmux } from "../../shared/tmux"
 import { setSessionAgent, subagentSessions, updateSessionAgent } from "../claude-code-session-state"
 import { getTaskToastManager } from "../task-toast-manager"
 import type { ConcurrencyManager } from "./concurrency"
@@ -11,6 +10,7 @@ import type { BackgroundTask, LaunchInput, ResumeInput } from "./types"
 import { buildFallbackBody, FALLBACK_AGENT, isAgentNotFoundError } from "./spawner/fallback-agent"
 import { buildTaskRecord } from "./spawner/task-record"
 import { buildTaskPromptBody } from "./spawner/task-prompt-body"
+import { invokeTmuxSessionCreatedCallback } from "./spawner/tmux-callback-invoker"
 
 export { buildFallbackBody, FALLBACK_AGENT, isAgentNotFoundError }
 
@@ -52,7 +52,8 @@ export async function startTask(
     return null
   })
   const parentDirectory = parentSession?.data?.directory ?? directory
-  log(`[background-agent] Parent dir: ${parentSession?.data?.directory}, using: ${parentDirectory}`)
+  const childDirectory = input.cwd ?? parentDirectory
+  log(`[background-agent] Parent dir: ${parentSession?.data?.directory}, using: ${childDirectory}`)
 
   const createResult = await client.session.create({
     body: {
@@ -60,7 +61,7 @@ export async function startTask(
       ...(input.sessionPermission ? { permission: input.sessionPermission } : {}),
     } as Record<string, unknown>,
     query: {
-      directory: parentDirectory,
+      directory: childDirectory,
     },
   }).catch((error: unknown) => {
     concurrencyManager.release(concurrencyKey)
@@ -119,7 +120,7 @@ export async function startTask(
   const promptChain = promptWithRetryInDirectory(client, {
     path: { id: sessionID },
     body: promptBody,
-  }, parentDirectory).catch(async (error) => {
+  }, childDirectory).catch(async (error) => {
     if (isAgentNotFoundError(error) && input.agent !== FALLBACK_AGENT) {
       log("[background-agent] Agent not found, retrying with fallback agent", {
         original: input.agent,
@@ -136,7 +137,7 @@ export async function startTask(
         await promptWithRetryInDirectory(client, {
           path: { id: sessionID },
           body: fallbackBody,
-        }, parentDirectory)
+        }, childDirectory)
         task.agent = FALLBACK_AGENT
         return
       } catch (retryError) {
@@ -151,26 +152,15 @@ export async function startTask(
 
   void promptChain
 
-  log("[background-agent] tmux callback check", {
-    hasCallback: !!onSubagentSessionCreated,
+  invokeTmuxSessionCreatedCallback({
+    callback: onSubagentSessionCreated,
     tmuxEnabled,
-    isInsideTmux: isInsideTmux(),
+    suppress: false,
     sessionID,
     parentID: input.parentSessionId,
+    title: input.description,
+    log,
   })
-
-  if (onSubagentSessionCreated && tmuxEnabled && isInsideTmux()) {
-    log("[background-agent] Invoking tmux callback (fire-and-forget)", { sessionID })
-    void onSubagentSessionCreated({
-      sessionID,
-      parentID: input.parentSessionId,
-      title: input.description,
-    }).catch((err) => {
-      log("[background-agent] Failed to spawn tmux pane:", err)
-    })
-  } else {
-    log("[background-agent] SKIP tmux callback - conditions not met")
-  }
 }
 
 export async function resumeTask(
@@ -186,11 +176,10 @@ export async function resumeTask(
   const sessionID = task.sessionId
 
   if (task.status === "running") {
-    log("[background-agent] Resume skipped - task already running:", {
-      taskId: task.id,
-      sessionID,
-    })
-    return
+    throw new Error(
+      `Task ${task.id} is currently running and cannot accept a continuation prompt. ` +
+      "Wait for it to complete before resuming it with task_id.",
+    )
   }
 
   const concurrencyKey = task.concurrencyGroup ?? task.agent

@@ -1,6 +1,6 @@
 ---
 name: programming
-description: "MUST USE for ANY work on .py .pyi .rs .ts .tsx .mts .cts .go files. One philosophy: strict types, modern stacks (Pydantic v2 / serde+thiserror / Zod / gin+sqlc+pgx+slog), modern toolchains (uv+basedpyright+ruff / cargo+clippy+miri / Bun+Biome+tsc / gofumpt+golangci-lint v2+nilaway+go-race), parse-don't-validate, exhaustive match, typed errors, no any/unwrap/panic, 250 LOC ceiling, TDD. Routes to references/{python,rust,typescript,rust-ub,go}/. Triggers: write/edit Python/Rust/TypeScript/Go code, new project, gin server, bubbletea TUI, CJK IME, connect-go RPC, sqlc pgx, branded ids, exhaustive match, unsafe Rust, miri, oversized file, refactor, TDD, e2e test, arena, allocator, bumpalo, const fn, const generics, comptime, zero-alloc, bitfield, repr, scopeguard, errdefer, Zig-like, zerocopy, packed struct."
+description: "Applies strict, modern language practice (typed errors, exhaustive match, tests that can fail) for Python, Rust, TypeScript, and Go. Use for work on .py, .rs, .ts, or .go files."
 ---
 
 # Programming
@@ -47,23 +47,15 @@ These are not style preferences. They are the seven axioms every recipe in `refe
 
 5. **Trust framework guarantees. Validate only at boundaries.** No null checks for values the type system already proves non-null. No `try/except` around code that cannot raise. No `unwrap`/`!`/`as` to paper over a contract you should have encoded in types. No defensive layer for a scenario you cannot name.
 
-6. **Test-driven, with the right shape of test.** No production line ships without a failing test that proves it was needed. Behavior is locked by tests, not by hope. See the TDD discipline below.
+6. **Tests are the behavior of record, and only tests that can fail count.** READ the tests covering the area BEFORE you change it: do they encode the intent, cover this path, pass? One wrong before your change is a FINDING — never edit it green. Reproduce a bug before fixing it. The run proves the change; add a test ONLY where the repository keeps tests for this behavior AND a regression would otherwise pass unnoticed — sized like its neighbors, never restating the change. See the test discipline below.
 
 ---
 
-## TDD DISCIPLINE — NON-NEGOTIABLE
-
-**Every change follows the red → green → refactor loop.** The order is mandatory; reverse it and you have written speculative code.
-
-### The order
-
-1. **Red.** Write a failing test that names the behavior in `Given / When / Then`. Run it. *Confirm it fails for the right reason* — not a typo, not an import error. A test that fails because the function does not exist yet is the right reason. A test that fails because of a missing import is not.
-2. **Green.** Write the minimum code to make the test pass. Resist adding the second case until the first passes. The second case is the next red.
-3. **Refactor.** With the test green, restructure ruthlessly. The test is your safety net. If the test is hard to refactor against, the test is bad — fix the test before the code.
+## TEST DISCIPLINE
 
 ### The shape of the test pyramid
 
-Every feature ships with all three rungs, sized in this proportion:
+Where the repository keeps these rungs, test at the cheapest rung that observes the behavior:
 
 | Rung | Count | Purpose | Speed budget |
 |---|---|---|---|
@@ -71,7 +63,7 @@ Every feature ships with all three rungs, sized in this proportion:
 | **Integration** | some | The real adapter against the real downstream (DB, queue, HTTP) — via `testcontainers`, `httptest`, or equivalent. NEVER a unit test pretending to be integration. | < 1 s each |
 | **E2E scenario** | few | One narrative per user-visible outcome. Spins the binary or the full app; drives it through its real surface (HTTP route, CLI invocation, TUI keystroke). Asserts the *observable outcome*, not internal state. | seconds, run on CI |
 
-If a feature has zero E2E coverage, it is undone — even if every unit test passes.
+A user-visible outcome you never drove through its real surface is unverified — a green unit suite does not stand in for that run.
 
 ### Given / When / Then is mandatory
 
@@ -102,23 +94,34 @@ Mocks are a last resort, not a default. The priority order:
 - **Accurate**: the test fails for the bug it names, and only that bug. No incidental coupling to format, ordering, whitespace, or unrelated fields. Assert on the *contract*, not on the dump.
 - **Efficient**: the whole unit suite runs in < 30 seconds on a developer laptop. The whole integration suite in < 5 minutes. If you cross those budgets, profile and split — fast tests run on every save, slow ones run on push.
 - **Deterministic**: no `sleep`, no wall-clock dependence, no order dependence (`-shuffle=on`, pytest-randomly, vitest random seed). Inject a `Clock`. Subscribe to the event, do not poll for it. Time-based flake is a bug, not a test issue.
-- **Isolated**: every test starts from a known fixture and tears down. `t.TempDir()`, `t.Setenv()`, transactional rollback for DB tests. Two tests passing individually but failing together is a fixture leak — fix it immediately.
+- **Isolated**: every test starts from a known fixture and tears down. `t.TempDir()`, `t.Setenv()`, transactional rollback for DB tests. Two tests passing individually but failing together is a fixture leak — fix it immediately. Isolation extends **across processes**: suite-global resources — sandbox/cache roots under a fixed tmpdir path, hardcoded listen ports, container names — are namespaced per run (`mktemp`, port `0`/ephemeral, unique names) so that two checkouts or worktrees of the repo running the suite concurrently cannot interfere. A fixed shared path that works on a single-checkout machine is a flake generator on a multi-agent workstation, and its signature is "a different test fails each run".
 
-### Prompt tests follow the same rule
+### Prompt tests: NEVER assert prose
 
-When tests cover LLM prompts or agent outputs, assert on **parsed structure, decisions, or rule data**, never on exact prompt strings. Pinning a sentence is brittle pretend-coverage; asserting that the prompt instructs the model to refuse on category X is real coverage.
+**FORBIDDEN — NO EXCEPTIONS: a test MUST NOT assert natural-language prompt text.** `expect(prompt).toContain("based on GPT-5.6")`, `not.toContain("old wording")`, `toMatchSnapshot()` on prose, grepping a sentence fragment — every one of these is pretend-coverage. It stays green while the behavior it claims to guard breaks, then blocks every legitimate rewording until someone bumps the pinned string. A reviewer MUST block it as HIGH; deleting such a test is a fix, not a coverage loss. "A nearby test already does it" is not a defense — that test is the disease, not the convention.
+
+Assert ONLY what a machine consumes:
+
+- the builder's routing decision — `expect(getPromptSource(model)).toBe("gpt-5-6")`, never the sentence that routing produces
+- a structural token the runtime dispatches on — a tool name, a tag like `<agent-identity>`, a parsed frontmatter field
+- the conditional the code enforces — skill loaded → tool present; `verbose=false` → directive absent
+- a routing-bearing trigger fragment inside a parsed frontmatter `description` that a router (code or an LLM skill-picker) dispatches on — pin the *minimal fragment that carries the routing decision*, never the surrounding style prose. Such pins are what let a later rewrite change every sentence around them while proving the routing contract survived.
+
+If no machine consumes the text, there is no seam: write NO test and say so in the PR; review guards prose. When you DELEGATE test-writing, hand the child the behavior the test must distinguish ("fails if override precedence breaks"), never a ready-made assertion string, prompt fragment, or marker to copy — a prescribed mechanism that is wrong gets implemented faithfully, and the error ships with a green suite.
 
 ### Anti-patterns the skill rejects
 
 | Anti-pattern | Why it fails | Fix |
 |---|---|---|
-| Writing code first, tests "to add later" | Tests-after rationalize the existing design, even when wrong. | Red first. Always. |
+| A test that restates the change (pins a constant, a string, a rename, a call) | Cannot fail for any regression; certifies the diff, not the behavior. | The run is the proof. Delete the test. |
 | One mega-test asserting 12 things | First failure hides the next 11. | Split by `Then` clause — one assertion class per test. |
 | Mocking every collaborator | Test passes regardless of real behavior. | Use a fake or the real thing. Mock only true unmockables. |
 | `time.sleep(0.1)` to "let it finish" | Flake guaranteed. | Subscribe to the completion signal; bounded await. |
 | Snapshot tests for everything | Locks formatting, not behavior. | Snapshots for *structure* (CLI help, JSON shape). Assertions for *behavior*. |
 | Removing a failing test to "unblock CI" | You just deleted a bug report. | Fix the code or fix the test — never delete to silence. |
 | `assert result is not None` and stopping there | Passes when result is garbage. | Assert the *value*, not its existence. |
+| Expected value derived from the output under test (`expect(config.prompt).toBe(getPrompt(config.model))` when the criterion is about `config.prompt`) | Recomputes a projection of the output and compares it to itself — passes even when the artifact is built from the wrong input. | Derive the expected value from the test's *input*: `expect(config.prompt).toBe(getPrompt(inputModel))` (independent known-good builder fed the fixture's input), or a stable builder routing decision. |
+| Override/precedence fixture equal to its fallback (override == system default) | The assertion passes whether or not the code honored the override — precedence is never exercised. | Make every value the code must select, preserve, or override differ from its fallback. Prove it: temporarily force the regression the test names, watch it fail, revert. |
 | Single happy-path E2E, no edges | Most bugs live on edges. | Edges are unit-test territory — but include at least one E2E that exercises an error path. |
 
 ---
@@ -132,7 +135,7 @@ Apply unless the per-language reference overrides with something stricter.
 | Immutable by default | `@dataclass(frozen=True, slots=True)` / Pydantic `frozen=True` | every binding is `let` (not `let mut`) unless mutation is the documented purpose | every field is `readonly`; arrays are `readonly T[]` | value types, unexported fields, no mutation methods unless mutation is the purpose |
 | Branded primitives | `UserId = NewType("UserId", int)` | `struct UserId(u64);` (newtype tuple) | `type UserId = Brand<string, "UserId">` | `type UserID string` + smart constructor with unexported field |
 | Exhaustive variant matching | `match` + `assert_never` | `match` (compiler-enforced) | `switch` + `assertNever` | sealed interface + type switch + **`exhaustive` linter** (the compiler will not help) |
-| No untyped escape hatches | no `Any` in public sigs, no `cast`, no `# type: ignore` | no `unwrap`/`expect` outside `main`/tests, no `as` for narrowing, no `#[allow]` to silence real warnings | no `any`, no `as` (except `as const`, `satisfies`), no `!`, no `@ts-ignore`, no `@ts-expect-error` | no `interface{}` / bare `any` in domain sigs; no `_ = err`; no `//nolint` without reason |
+| No untyped escape hatches | no `Any` in public sigs, no `cast`, no `# type: ignore` | no `unwrap`/`expect` outside tests (invariant `expect` only behind `#[expect(clippy::expect_used, reason)]`), no numeric `as`, no `#[allow]` (silence with `#[expect(lint, reason)]`) | no `any`, no `as` (except `as const`, `satisfies`), no `!`, no `@ts-ignore`, no `@ts-expect-error` | no `interface{}` / bare `any` in domain sigs; no `_ = err`; no `//nolint` without reason |
 | No bare error strings | typed exception dataclass with `__str__` | `thiserror` enum (lib) or `anyhow` with `.context(...)` (app) | `Error` subclass with typed fields | sentinel `errors.New` + typed `*XError` struct; wrap with `%w`; check via `errors.Is/As` |
 | Boundary catch only | catch the exact exception you expect; broad `except Exception` only in `main()`, with logging + re-raise | `?` everywhere; never `panic!` in library code | `catch` must narrow with `instanceof` and re-throw or convert; no empty catch | every `(T, error)` checked; `panic` only in `main`/tests; one `httperr.Write` funnel in handlers |
 | Resources via RAII | `with` (sync) / `async with` (async) | `Drop` impl or RAII guard | `using`/`await using` (TC39 explicit resource management) | `defer x.Close()` immediately after acquisition; `bodyclose`/`sqlclosecheck` linters enforce |
@@ -178,7 +181,7 @@ A bare default constructor for any of these (no timeouts, no pool tuning, no sch
 | UB / soundness gate | (n/a) | **nightly miri** with strict provenance + Tree Borrows pass | (n/a) | **`nilaway`** + `-race` detector + `goleak` are the equivalent gate |
 | Disposable scripts | **PEP 723** inline metadata + `uv run script.py` | **rust-script** with inline `Cargo.toml` block | `bun run script.ts` | `//go:build ignore` + `go run script.go` |
 | Bootstrap a new project | `scripts/python/new-project.py` | `scripts/rust/new-project.py` | `scripts/typescript/new-project.ts` | `scripts/go/new-project.py` |
-| Pre-commit / CI gate | `ruff check . && basedpyright && pytest` | `cargo +nightly clippy -- -D warnings && cargo nextest run && cargo +nightly miri test` | `bunx biome check . && bunx tsc --noEmit && bun test` | `gofumpt -l . && golangci-lint run ./... && nilaway ./... && go test -race -shuffle=on -count=1 ./...` |
+| Pre-commit / CI gate | `ruff check . && basedpyright && pytest` | `cargo clippy --all-targets -- -D warnings && cargo nextest run && cargo test --doc && cargo +nightly miri nextest run` | `bunx biome check . && bunx tsc --noEmit && bun test` | `gofumpt -l . && golangci-lint run ./... && nilaway ./... && go test -race -shuffle=on -count=1 ./...` |
 
 A `tsconfig.json` with `"strict": true` alone is **not** strict. The reference enumerates the additional flags. Same for `pyproject.toml` and `Cargo.toml` - the references contain the canonical full configuration.
 
@@ -213,6 +216,22 @@ Performing a delete/remove/clear/drop and then immediately querying to "confirm"
 Naming variables, functions, or flags by the **absence** of a quality (`isNotValid`, `noErrors`, `cannotProceed`, `DisableLogging`) instead of its **presence** (`isValid`, `isClean`, `canProceed`, `LoggingEnabled`). Every negation forces the reader to invert mentally; two negations (`if !isNotReady`) become a logic puzzle nobody reviews confidently.
 
 **When detected:** Rename to the positive form and invert the branch logic. Negation IS appropriate in guard clauses (`if !authorized { return }`) and filters (`items.filter(|x| !x.is_expired())`) — the negative form is the intent there. See [`references/code-smells.md` Smell 4](references/code-smells.md#smell-4--negative-form-names-and-conditions) for the full naming table and examples.
+
+---
+
+## LOGGING — CROSS-CUTTING RULES
+
+Logging is part of the code you ship, and it has iron rules of its own: levels chosen by naming the consumer (never by severity vibes), placement at decision points (never inside helpers), stable messages with structured fields — and, above everything else, **the project's existing practice wins: a project with a designated logger gets that logger and nothing else, and a project that does not log does not get logging uninvited.**
+
+**Read [`references/logging.md`](references/logging.md) BEFORE the change** whenever your edit adds or modifies log lines, sets up a logger or a new service entrypoint, or handles errors at a boundary.
+
+---
+
+## DEPENDENCY UPGRADES — CROSS-CUTTING RULES
+
+- **`0.x` minor = major.** Semver promises nothing below 1.0: treat `0.N → 0.N+1` as a breaking upgrade — read the changelog, build, and run the full suite before trusting it. A required field appearing in a public options type is a routine `0.x` "minor".
+- **Version literals live outside the manifest.** Before committing a bump, grep the repo for the old version string: Dockerfiles pinning a global CLI, CI workflows, and docs all carry copies. A bump that updates only the package manifest ships a split-brain deploy.
+- **Never hand-merge a lockfile.** On conflict, take either side whole and regenerate with the package manager — the resolver owns that file, not you.
 
 ---
 
@@ -254,13 +273,14 @@ After every code-writing session, answer these out loud (in your reply) before d
 1. **Single responsibility?** Can I name what this file owns in one short noun phrase? If the answer needs the word "and", split.
 2. **Boundary purity?** Did I parse untrusted input into a typed value at the boundary, or did I pass `dict[str, Any]` / `serde_json::Value` / `unknown` past the boundary? If the latter, fix it.
 3. **Variant discrimination?** Did I use `if`/`elif`/`else` (or `switch` without `assertNever`, or `match` without `assert_never`) anywhere to discriminate on a tagged type or enum? If yes, rewrite as exhaustive match.
-4. **Escape hatches?** Any `Any`, `# type: ignore`, `unwrap`, `expect` outside `main`/tests, `as` numeric cast, `!`, `@ts-ignore`, `@ts-expect-error`, `#[allow]` on a real warning? If yes, fix the type or document why with a comment.
+4. **Escape hatches?** Any `Any`, `# type: ignore`, `unwrap`, `expect` outside tests, `as` numeric cast, `!`, `@ts-ignore`, `@ts-expect-error`, a Rust `#[allow]` instead of `#[expect(lint, reason)]`? If yes, fix the type or document why with a comment.
 5. **Defensive layer?** Any null check, try/except, or `isinstance` guarding a value the type system already proves? If yes, delete.
 6. **Helpers for one-off?** Any function, class, or trait introduced for a single caller that will never get a second caller? If yes, inline — axiom 0 should have caught it pre-write; this is the backstop.
 7. **Tests?** Is the behavior I just introduced locked by a test that would fail if I revert this commit?
 8. **Parameter bloat?** Any function I wrote or modified that takes more than 3 parameters — or smuggles them through a dict/kwargs/`...args`/throwaway options object? If yes, group related params into a typed value object. See [Smell 2](references/code-smells.md#smell-2--function-with-more-than-3-parameters).
 9. **Redundant verification?** Did I perform a destructive action (delete, remove, clear) and then immediately re-query to "confirm" it worked? Did I call a setter then a getter to "verify"? If yes, delete the verification — the operation's contract IS the proof. See [Smell 3](references/code-smells.md#smell-3--redundant-verification-after-a-destructive-action).
 10. **Negative naming?** Any variable, function, or flag named by the absence of a quality (`isNotValid`, `noErrors`, `DisableX`) when a positive name (`isValid`, `isClean`, `EnableX`) would work? If yes, rename to positive form and invert the branch. See [Smell 4](references/code-smells.md#smell-4--negative-form-names-and-conditions).
+11. **Logging?** If I touched log lines, logger setup, or error boundaries: did I follow the project's existing practice (including its absence)? Is every new line leveled by its consumer, placed at a decision point, and message-stable with data in fields? See [`references/logging.md`](references/logging.md).
 
 **If any answer fails, fix it before declaring done.** This loop is the difference between "the code compiles" and "the code is correct."
 
@@ -321,7 +341,9 @@ These two skills are not optional cosmetics. They are the recovery path for the 
 | Concurrency primitives (locks, atomics, channels, loom) | `references/rust/concurrency.md` |
 | axum + sqlx + tracing + tower HTTP stack | `references/rust/axum-stack.md` |
 | clap + color-eyre + tracing + indicatif CLI stack | `references/rust/clap-stack.md` |
-| Property tests (proptest) + snapshot tests (insta) | `references/rust/proptest-insta.md` |
+| Public API design (naming, conversions, traits, rustdoc sections) | `references/rust/api-design.md` |
+| Declarative and procedural macros | `references/rust/macros.md` |
+| Property tests (proptest) + snapshot tests (insta), test placement, doctests | `references/rust/proptest-insta.md` |
 | Disposable `rust-script` scripts | `references/rust/one-liners.md` |
 | Canonical library defaults | `references/rust/libraries.md` |
 | **ANY `unsafe` / FFI / `MaybeUninit` / lock-free work** | **`references/rust-ub/` (full directory)** |
