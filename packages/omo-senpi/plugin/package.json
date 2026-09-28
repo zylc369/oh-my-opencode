@@ -1,8 +1,14 @@
 {
   "name": "@code-yeongyu/omo-senpi",
-  "version": "4.15.1",
+  "version": "5.1.0",
+  "private": true,
   "description": "OMO Senpi adapter packaged as one local-path Pi package.",
   "type": "module",
+  "imports": {
+    "#omo-task-runtime": "./extensions/omo-task.js",
+    "#omo-computer-use-runtime": "./extensions/omo-computer-use.js",
+    "#omo-agent-toolkit-sdk": "./runtime/agent-toolkit-sdk/sdk.js"
+  },
   "keywords": [
     "pi-package",
     "senpi",
@@ -11,17 +17,21 @@
     "pi"
   ],
   "pi": {
+    "system": true,
     "extensions": [
       "./extensions/omo.js"
-    ],
-    "skills": [
-      "./skills"
     ]
   },
   "files": [
     "extensions",
     "skills",
+    "skills-conditional",
+    "runtime",
+    "scripts/install.mjs",
+    "CHANGELOG.md",
     "README.md",
-    "LICENSE"
+    "NOTICE",
+    "LICENSE",
+    "daemon-launch-spec.json"
   ]
 }

@@ -1,10 +1,11 @@
 /**
- * GPT-5.5 Sisyphus-Junior prompt - focused executor for orchestrator-routed
+ * Shared GPT-5.5/GPT-5.6 Sisyphus-Junior prompt - focused executor for orchestrator-routed
  * categorized tasks, gated on personal manual QA of the artifact's surface.
  */
 
 import { resolvePromptAppend } from "../builtin-agents/resolve-file-uri"
 import { GPT_APPLY_PATCH_GUIDANCE } from "../gpt-apply-patch-guard"
+import { getGptPromptIdentity } from "../gpt-prompt-identity"
 
 function buildTaskSystemGuide(useTaskSystem: boolean): string {
   if (useTaskSystem) {
@@ -26,7 +27,7 @@ Workflow:
 4. If scope changes, update the todo list before proceeding.`
 }
 
-const SISYPHUS_JUNIOR_GPT_5_5_TEMPLATE = `You are Sisyphus-Junior, a focused task executor based on GPT-5.5. A primary orchestrator has delegated a categorized task to you, and your job is to complete that task within this turn using the guidance provided by the category-specific context appended to these instructions.
+const SISYPHUS_JUNIOR_GPT_5_5_TEMPLATE = `You are Sisyphus-Junior, a focused task executor based on {{ modelIdentity }}. A primary orchestrator has delegated a categorized task to you, and your job is to complete that task within this turn using the guidance provided by the category-specific context appended to these instructions.
 
 {{ personality }}
 
@@ -266,7 +267,7 @@ You may invoke \`task()\` with \`subagent_type\` set to \`explore\`, \`librarian
 
 - \`explore\`: internal codebase pattern search with synthesis. Parallel batches of 2-5 with \`run_in_background=true\`.
 - \`librarian\`: external docs, open-source code, web references. Same pattern.
-- \`oracle\`: high-reasoning consultant. \`run_in_background=false\` when their answer blocks your next step; \`true\` when you can continue productively while they think.
+- \`oracle\`: high-reasoning consultant. Run it in the background; continue with work that does not depend on the answer and never ship what it was asked to decide before the result arrives.
 
 Every \`task()\` call needs \`load_skills\` (empty array \`[]\` is valid). Reuse \`task_id\` for follow-ups to preserve sub-agent context.
 
@@ -286,14 +287,15 @@ The block below (injected at runtime by the harness) tells you the specific cate
 export function buildGpt55SisyphusJuniorPrompt(
   useTaskSystem: boolean,
   promptAppend?: string,
+  model = "gpt-5.5",
 ): string {
   const personality = ""
   const taskSystemGuide = buildTaskSystemGuide(useTaskSystem)
 
-  const base = SISYPHUS_JUNIOR_GPT_5_5_TEMPLATE.replace(
-    "{{ personality }}",
-    personality,
-  ).replace("{{ taskSystemGuide }}", taskSystemGuide)
+  const base = SISYPHUS_JUNIOR_GPT_5_5_TEMPLATE
+    .replace("{{ modelIdentity }}", getGptPromptIdentity(model))
+    .replace("{{ personality }}", personality)
+    .replace("{{ taskSystemGuide }}", taskSystemGuide)
 
   if (!promptAppend) return base
   return `${base}\n\n${resolvePromptAppend(promptAppend)}`

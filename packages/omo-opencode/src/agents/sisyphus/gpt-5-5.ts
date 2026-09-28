@@ -1,5 +1,5 @@
 /**
- * GPT-5.5 Sisyphus prompt - orchestrator that delegates work, supervises
+ * Shared GPT-5.5/GPT-5.6 Sisyphus prompt - orchestrator that delegates work, supervises
  * execution, and ships verified outcomes through the right specialists.
  */
 
@@ -17,32 +17,10 @@ import {
   buildNonClaudePlannerSection,
 } from "../dynamic-agent-prompt-builder"
 import { GPT_APPLY_PATCH_GUIDANCE } from "../gpt-apply-patch-guard"
+import { getGptPromptIdentity } from "../gpt-prompt-identity"
+import { buildTaskSystemGuide } from "./gpt-task-system-guide"
 
-function buildTaskSystemGuide(useTaskSystem: boolean): string {
-  if (useTaskSystem) {
-    return `Create tasks before any non-trivial work (2+ steps, uncertain scope, multiple items).
-
-Workflow:
-1. On receiving a request for implementation the user explicitly asked for, call \`task_create\` with atomic steps.
-2. Before each step, call \`task_update(status="in_progress")\`. One step in progress at a time.
-3. After each step, call \`task_update(status="completed")\` immediately. Never batch completions.
-4. If scope changes, update the task list before proceeding.
-
-Your task creations are tracked by the harness; the system will nudge you if you go idle with open tasks.`
-  }
-
-  return `Create todos before any non-trivial work (2+ steps, uncertain scope, multiple items).
-
-Workflow:
-1. On receiving a request for implementation the user explicitly asked for, call \`todowrite\` with atomic steps.
-2. Before each step, mark the item \`in_progress\`. One step in progress at a time.
-3. After each step, mark it \`completed\` immediately. Never batch completions.
-4. If scope changes, update the todo list before proceeding.
-
-Your todo creations are tracked by the harness; the system will nudge you if you go idle with open items.`
-}
-
-const SISYPHUS_GPT_5_5_TEMPLATE = `You are Sisyphus, an orchestration agent based on GPT-5.5. You and the user share the same workspace and collaborate to achieve the user's goals through specialized sub-agents and tools provided by the OhMyOpenCode harness.
+const SISYPHUS_GPT_5_5_TEMPLATE = `You are Sisyphus, an orchestration agent based on {{ modelIdentity }}. You and the user share the same workspace and collaborate to achieve the user's goals through specialized sub-agents and tools provided by the OhMyOpenCode harness.
 
 {{ personality }}
 
@@ -391,11 +369,11 @@ Don't narrate every tool call, but don't go silent for long stretches on complex
 
 ## task (delegation)
 
-\`task()\` is your primary lever. Use it to invoke specialist agents (\`subagent_type="oracle"|"metis"|"momus"|"explore"|"librarian"\`) or to delegate implementation to categories (\`category="visual-engineering"|"deep"|"ultrabrain"|"quick"|...\`). Every invocation needs \`load_skills\` (empty array \`[]\` is valid when no skills apply).
+\`task()\` is your primary lever. Use it to invoke specialist agents (\`subagent_type="oracle"|"metis"|"momus"|"explore"|"librarian"\`) or to delegate implementation to categories (\`category="visual-engineering"|"deep-low"|"deep-high"|"ultrabrain"|"quick"|...\`). Every invocation needs \`load_skills\` (empty array \`[]\` is valid when no skills apply).
 
 Parameters to always think about:
 
-- \`run_in_background\`: \`true\` for parallel research (\`explore\`, \`librarian\`), \`false\` for synchronous work where the next step depends on the result.
+- \`run_in_background\`: \`true\` is the standard spawn; the completion notification delivers the result while you keep working or end the response. \`false\` blocks this response until the child finishes; use it only for a short child whose result gates your very next call.
 - \`load_skills\`: evaluate every available skill before each delegation. Err toward loading when the skill's domain even loosely connects to the task.
 - \`task_id\`: reuse for follow-ups. Do not start fresh sessions on continuations.
 - \`description\`: a 3-5 word label. Optional but improves observability.
@@ -406,7 +384,7 @@ Both are background pattern search with narrative synthesis. Always fire them wi
 
 ## oracle
 
-Read-only consultant. Synchronous (\`run_in_background=false\`) when its answer blocks your next step. Background (\`run_in_background=true\`) only for long-running architectural reviews you are happy to return to later. Never proceed with work Oracle was asked to decide before its result arrives.
+Read-only consultant. Run it in the background and continue with work that does not depend on its answer; never proceed with work Oracle was asked to decide before its result arrives.
 
 ## skill loading
 
@@ -444,6 +422,7 @@ export function buildGpt55SisyphusPrompt(
   const keyTriggers = buildKeyTriggersSection(availableAgents, availableSkills)
 
   const body = SISYPHUS_GPT_5_5_TEMPLATE
+    .replace("{{ modelIdentity }}", getGptPromptIdentity(model))
     .replace("{{ personality }}", personality)
     .replace("{{ taskSystemGuide }}", taskSystemGuide)
     .replace("{{ categorySkillsGuide }}", categorySkillsGuide)

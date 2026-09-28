@@ -1,31 +1,44 @@
 #!/usr/bin/env node
+import { existsSync } from "node:fs"
 import { cp, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { dirname, extname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
+import { createSkillSourceCopyFilter } from "@oh-my-opencode/shared-skills/skill-source-filter"
+import { createNativeSkillSources } from "./native-skill-sources.mjs"
+import { insertSenpiCompatibilityGuidance } from "./senpi-compatibility-guidance.mjs"
+import { applySenpiSkillRosterOverlay } from "./senpi-skill-roster-overlay.mjs"
 
 const pluginRoot = dirname(dirname(fileURLToPath(import.meta.url)))
 const repoRoot = dirname(dirname(pluginRoot))
-const skillsRoot = join(pluginRoot, "skills")
+const skillsRoot = process.env.OMO_SENPI_PLUGIN_OUTPUT === undefined
+  ? join(pluginRoot, "skills")
+  : join(process.env.OMO_SENPI_PLUGIN_OUTPUT, "skills")
+const sharedSkillsRoot = join(repoRoot, "shared-skills", "skills")
 
 const skillSources = [
   {
-    name: "ultrawork",
-    source: join(repoRoot, "omo-codex", "plugin", "components", "ultrawork", "skills", "ultrawork"),
-  },
-  {
     name: "ulw-loop",
-    source: join(repoRoot, "omo-codex", "plugin", "components", "ulw-loop", "skills", "ulw-loop"),
+    source: join(repoRoot, "omo-senpi", "skills", "ulw-loop"),
   },
 ]
+const componentSkillNames = new Set(skillSources.map(({ name }) => name))
+
+const { sources: nativeSkillSources, names: nativeSkillNames } = createNativeSkillSources(repoRoot)
 
 const textExtensions = new Set([".md", ".yaml", ".yml", ".json", ".txt"])
 const sectionHeadingsToStrip = new Set([
   "Codex Harness Tool Compatibility",
   "Codex Tool Mapping",
   "Codex subagent reliability",
+  "Codex Subagent Reliability",
   "Subagent-dependent transition barrier",
+  "Senpi Harness Tool Compatibility",
 ])
-const forbiddenGuidancePattern = /\b(?:multi_agent|spawn_agent)\b/i
+const forbiddenGuidancePattern = /\b(?:multi_agent|spawn_agent|update_plan)\b/i
+
+
+/** senpi additionally excludes the generated Codex agent manifest from packaged skills. */
+const senpiFilterOptions = { ignoredFileNames: ["openai.yaml"] }
 
 function isTextFile(path) {
   return textExtensions.has(extname(path))
@@ -91,8 +104,23 @@ function normalizeBlankLines(content) {
   return content.replace(/\n{3,}/g, "\n\n")
 }
 
-function adaptSkillText(content) {
+function applyTier1Adaptation(content) {
   return normalizeBlankLines(stripForbiddenGuidanceLines(stripNamedSections(rewriteEditionNaming(content))))
+}
+
+function applyUlwExecuteOverlay(content) {
+  return content.replace(/codex:<session_id>/g, "senpi:<session_id>").replace(/\bcodex:/g, "senpi:")
+}
+
+function applySharedTierAdaptation(skillName, content) {
+  let adapted = applySenpiSkillRosterOverlay(skillName, content)
+  if (skillName === "ulw-execute") {
+    adapted = applyUlwExecuteOverlay(adapted)
+  }
+  adapted = stripNamedSections(adapted)
+  adapted = stripForbiddenGuidanceLines(adapted)
+  adapted = insertSenpiCompatibilityGuidance(adapted)
+  return normalizeBlankLines(adapted)
 }
 
 async function listFiles(root) {
@@ -102,7 +130,7 @@ async function listFiles(root) {
   for (const entry of entries) {
     const entryPath = join(root, entry.name)
     if (entry.isDirectory()) {
-      files.push(...await listFiles(entryPath))
+      files.push(...(await listFiles(entryPath)))
     } else if (entry.isFile()) {
       files.push(entryPath)
     }
@@ -111,13 +139,13 @@ async function listFiles(root) {
   return files
 }
 
-async function adaptSkillTree(skillRoot) {
+async function adaptSkillTree(skillRoot, adapter) {
   const files = await listFiles(skillRoot)
   for (const file of files) {
     if (!isTextFile(file)) continue
 
     const before = await readFile(file, "utf8")
-    const after = adaptSkillText(before)
+    const after = adapter(before)
     if (after !== before) {
       await writeFile(file, after, "utf8")
     }
@@ -131,6 +159,45 @@ async function assertSourceExists(source) {
   }
 }
 
+// Shared assets are copied byte-for-byte (no text adaptation) after the native copy and its blank-line
+// normalization, so the shipped files equal their shared sources. A missing asset or one that the
+// native source already provides fails the sync instead of silently shadowing either side.
+async function overlaySharedAssets(name, nativeSource, destination, sharedAssets) {
+  const sharedSkillRoot = join(sharedSkillsRoot, name)
+  for (const asset of sharedAssets) {
+    const sharedPath = join(sharedSkillRoot, asset)
+    if (!existsSync(sharedPath)) {
+      throw new Error(`${name}: shared asset "${asset}" does not exist at ${sharedPath}`)
+    }
+
+    const nativePath = join(nativeSource, asset)
+    if (existsSync(nativePath)) {
+      const collisions = (await stat(nativePath)).isDirectory() ? await listFiles(nativePath) : [nativePath]
+      if (collisions.length > 0) {
+        throw new Error(`${name}: shared asset "${asset}" would overwrite native source file(s): ${collisions.join(", ")}`)
+      }
+    }
+
+    await cp(sharedPath, join(destination, asset), {
+      filter: createSkillSourceCopyFilter(sharedSkillRoot, senpiFilterOptions),
+      recursive: true,
+    })
+  }
+}
+
+// Read-only inventory shared by generation and shipped-payload validation.
+export async function getSkillOutputManifest() {
+  const sharedSkillEntries = await readdir(sharedSkillsRoot, { withFileTypes: true })
+  const sharedSkillNames = sharedSkillEntries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort()
+  return {
+    root: skillsRoot,
+    names: [...new Set([...componentSkillNames, ...nativeSkillNames, ...sharedSkillNames])],
+  }
+}
+
 export async function syncSkills() {
   await rm(skillsRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   await mkdir(skillsRoot, { recursive: true })
@@ -138,11 +205,28 @@ export async function syncSkills() {
   for (const { name, source } of skillSources) {
     await assertSourceExists(source)
     const destination = join(skillsRoot, name)
-    await cp(source, destination, { recursive: true })
-    await adaptSkillTree(destination)
+    await cp(source, destination, { filter: createSkillSourceCopyFilter(source, senpiFilterOptions), recursive: true })
+    await adaptSkillTree(destination, normalizeBlankLines)
   }
 
-  console.log(`synced ${skillSources.length} omo-senpi skills to ${skillsRoot}`)
+  for (const { name, source, sharedAssets = [] } of nativeSkillSources) {
+    await assertSourceExists(source)
+    const destination = join(skillsRoot, name)
+    await cp(source, destination, { filter: createSkillSourceCopyFilter(source, senpiFilterOptions), recursive: true })
+    await adaptSkillTree(destination, normalizeBlankLines)
+    await overlaySharedAssets(name, source, destination, sharedAssets)
+  }
+
+  const { names } = await getSkillOutputManifest()
+  for (const skillName of names) {
+    if (componentSkillNames.has(skillName) || nativeSkillNames.has(skillName)) continue
+    const source = join(sharedSkillsRoot, skillName)
+    const destination = join(skillsRoot, skillName)
+    await cp(source, destination, { filter: createSkillSourceCopyFilter(source, senpiFilterOptions), recursive: true })
+    await adaptSkillTree(destination, (content) => applySharedTierAdaptation(skillName, content))
+  }
+
+  console.log(`synced omo-senpi skills to ${skillsRoot}`)
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

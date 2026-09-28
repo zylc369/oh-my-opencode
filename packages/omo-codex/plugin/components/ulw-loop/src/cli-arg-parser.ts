@@ -5,7 +5,7 @@ import { UlwLoopError } from "./types.js";
 
 type RecordEvidenceCliArgs = { readonly goalId: string; readonly criterionId: string; readonly status: "pass" | "fail" | "blocked"; readonly evidence: string; readonly notes?: string };
 
-const VALUE_FLAGS = new Set("--brief --brief-file --session-id --codex-goal-mode --goal --goal-id --criterion-id --status --evidence --notes --codex-goal-json --quality-gate-json --kind --rationale --title --objective --target-goal-id --source --after-json --directive-json --directive-file --idempotency-key".split(" "));
+const VALUE_FLAGS = new Set("--brief --brief-file --session-id --codex-goal-mode --validation-batch-json --goal --goal-id --criterion-id --status --evidence --notes --codex-goal-json --quality-gate-json --kind --rationale --title --objective --target-goal-id --source --after-json --directive-json --directive-file --idempotency-key --proposals-json".split(" "));
 const SUBCOMMANDS = new Set("create-goals status complete-goals criteria record-evidence checkpoint steer add-goal record-review-blockers".split(" "));
 
 export function hasFlag(argv: readonly string[], flag: string): boolean { return argv.includes(flag); }
@@ -65,11 +65,17 @@ export async function readJsonInput(value: string | undefined): Promise<unknown 
 
 export async function parseCodexGoalJson(value: string | undefined): Promise<string | undefined> {
 	if (value === undefined) return undefined;
-	const raw = looksLikeJson(value) ? value : await readFile(value, "utf8");
-	try { JSON.parse(raw); return raw; }
-	catch (error) {
+	try {
+		const raw = looksLikeJson(value) ? value : await readFile(value, "utf8");
+		JSON.parse(raw);
+		return raw;
+	} catch (error) {
 		const message = error instanceof Error ? error.message : "unknown error";
-		throw new UlwLoopError(`Invalid --codex-goal-json: ${message}`, "ULW_LOOP_CODEX_GOAL_JSON_INVALID", { cause: error });
+		throw new UlwLoopError(
+			`Invalid --codex-goal-json: ${looksLikeJson(value) ? message : "neither valid JSON nor a readable path"}`,
+			"ULW_LOOP_CODEX_GOAL_JSON_INVALID",
+			{ cause: error },
+		);
 	}
 }
 

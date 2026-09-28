@@ -2,8 +2,8 @@ import type { BuiltinSkill } from "./types"
 import type { BrowserAutomationProvider } from "../../types"
 
 import {
+  createPlaywrightSkill,
   playwrightSkill,
-  agentBrowserSkill,
   playwrightCliSkill,
   frontendSkill,
   gitMasterSkill,
@@ -22,24 +22,34 @@ export interface CreateBuiltinSkillsOptions {
   browserProvider?: BrowserAutomationProvider
   disabledSkills?: Set<string>
   teamModeEnabled?: boolean
+  /**
+   * Extra CLI arguments appended to the default `@playwright/mcp@latest`
+   * invocation when `browserProvider` resolves to the `playwright` MCP variant.
+   *
+   * Only threaded through to `createPlaywrightSkill`; other browser providers
+   * ignore this option.
+   */
+  playwrightMcpArgs?: readonly string[]
 }
 
 export function createBuiltinSkills(options: CreateBuiltinSkillsOptions = {}): BuiltinSkill[] {
-  const { browserProvider = "playwright", disabledSkills, teamModeEnabled = false } = options
+  const {
+    browserProvider = "playwright",
+    disabledSkills,
+    teamModeEnabled = false,
+    playwrightMcpArgs,
+  } = options
 
-  let browserSkill: BuiltinSkill
-	if (browserProvider === "agent-browser") {
-		browserSkill = agentBrowserSkill
-	} else if (browserProvider === "dev-browser") {
-		browserSkill = devBrowserSkill
-	} else if (browserProvider === "playwright-cli") {
-		browserSkill = playwrightCliSkill
-	} else {
-		browserSkill = playwrightSkill
-	}
+  const browserSkills = {
+    "dev-browser": devBrowserSkill,
+    "playwright-cli": playwrightCliSkill,
+    playwright: playwrightMcpArgs?.length
+      ? createPlaywrightSkill({ mcp_args: playwrightMcpArgs })
+      : playwrightSkill,
+  } satisfies Record<BrowserAutomationProvider, BuiltinSkill>
 
 	const skills = [
-		browserSkill,
+		browserSkills[browserProvider],
 		frontendSkill,
 		gitMasterSkill,
 		reviewWorkSkill,

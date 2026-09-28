@@ -32,7 +32,6 @@ import {
 import { SessionCategoryRegistry } from "../../shared/session-category-registry"
 import { applySessionPromptParams } from "../../shared/session-prompt-params-helpers"
 import { setSessionTools } from "../../shared/session-tools-store"
-import { isInsideTmux } from "../../shared/tmux"
 import { clearSessionAgent, setSessionAgent, subagentSessions, updateSessionAgent } from "../claude-code-session-state"
 import { MESSAGE_STORAGE } from "../hook-message-injector"
 import { getTaskToastManager } from "../task-toast-manager"
@@ -69,6 +68,7 @@ import {
   getSessionErrorMessage,
   isAbortedSessionError,
   isRecord,
+  isTerminalSessionError,
 } from "./error-classifier"
 import { isEmptyNoProgressAssistantTurnInfo } from "./empty-assistant-turn"
 import { tryFallbackRetry } from "./fallback-retry-handler"
@@ -98,8 +98,11 @@ import {
 } from "./session-stream-activity"
 import { isActiveSessionStatus, isTerminalSessionStatus } from "./session-status-classifier"
 import { buildFallbackBody, FALLBACK_AGENT, isAgentNotFoundError } from "./spawner"
+import { invokeTmuxSessionCreatedCallback } from "./spawner/tmux-callback-invoker"
 import {
   createSubagentDepthLimitError,
+  createSubagentDescendantLimitError,
+  getMaxLiveDescendantsPerRoot,
   getMaxSubagentDepth,
   resolveSubagentSpawnContext,
   type SubagentSpawnContext,
@@ -264,6 +267,7 @@ export class BackgroundManager {
   private queuesByKey: Map<string, QueueItem[]> = new Map()
   private processingKeys: Set<string> = new Set()
   private completionTimers: Map<string, ReturnType<typeof setTimeout>> = new Map()
+  private readonly syncAttachedSessions = new Set<string>()
   private completedTaskArchive: Map<string, BackgroundTask> = new Map()
   private completedTaskSummaries: Map<string, BackgroundTaskNotificationTask[]> = new Map()
   private idleDeferralTimers: Map<string, ReturnType<typeof setTimeout>> = new Map()
@@ -280,6 +284,8 @@ export class BackgroundManager {
   private loggedSessionStatusUnavailable = false
   readonly taskHistory = new TaskHistory()
   private cachedCircuitBreakerSettings?: CircuitBreakerSettings
+  private readonly scheduledFlushSettledCounts = new Map<string, number>()
+  private readonly scheduledFlushSettledWaiters = new Map<string, Array<() => void>>()
 
   constructor(config: BackgroundManagerConfig) {
     const { pluginContext, ...options } = config
@@ -307,7 +313,7 @@ export class BackgroundManager {
         directory: this.directory,
         enqueueNotificationForParent: this.enqueueNotificationForParent.bind(this),
         onPendingWakeRequeued: (sessionID) => this.updateBackgroundTaskMarker(sessionID),
-        onScheduledFlushSettled: (sessionID) => this.updateBackgroundTaskMarker(sessionID),
+        onScheduledFlushSettled: (sessionID) => this.recordScheduledFlushSettled(sessionID),
       },
       {
         pendingRetryMs: PENDING_PARENT_WAKE_RETRY_MS,
@@ -361,6 +367,16 @@ export class BackgroundManager {
     rollback: () => void
   }> {
     const spawnContext = await this.assertCanSpawn(parentSessionID)
+    const maxDescendants = getMaxLiveDescendantsPerRoot(this.config)
+    const currentCount = this.rootDescendantCounts.get(spawnContext.rootSessionID) ?? 0
+    if (maxDescendants !== 0 && currentCount >= maxDescendants) {
+      throw createSubagentDescendantLimitError({
+        descendantCount: currentCount,
+        maxDescendants,
+        parentSessionID,
+        rootSessionID: spawnContext.rootSessionID,
+      })
+    }
     const descendantCount = this.registerRootDescendant(spawnContext.rootSessionID)
     let settled = false
 
@@ -377,6 +393,14 @@ export class BackgroundManager {
         this.unregisterRootDescendant(spawnContext.rootSessionID)
       },
     }
+  }
+
+  async acquireSyncSubagentConcurrency(model: string, taskId?: string): Promise<void> {
+    await this.concurrencyManager.acquire(model, taskId)
+  }
+
+  releaseSyncSubagentConcurrency(model: string): void {
+    this.concurrencyManager.release(model)
   }
 
   private registerRootDescendant(rootSessionID: string): number {
@@ -605,6 +629,7 @@ export class BackgroundManager {
         sessionPermission: input.sessionPermission,
         attemptCount: 0,
         category: input.category,
+        cwd: input.cwd,
         onSessionCreated: input.onSessionCreated,
       }
       const firstAttempt = startAttempt(task, input.model)
@@ -752,7 +777,8 @@ export class BackgroundManager {
       return null
     })
     const parentDirectory = parentSession?.data?.directory ?? this.directory
-    log(`[background-agent] Parent dir: ${parentSession?.data?.directory}, using: ${parentDirectory}`)
+    const childDirectory = input.cwd ?? parentDirectory
+    log(`[background-agent] Parent dir: ${parentSession?.data?.directory}, using: ${childDirectory}`)
 
     const createResult = await this.client.session.create({
       body: {
@@ -770,7 +796,7 @@ export class BackgroundManager {
           : {}),
       } as Record<string, unknown>,
       query: {
-        directory: parentDirectory,
+        directory: childDirectory,
       },
     })
 
@@ -830,7 +856,7 @@ export class BackgroundManager {
 
     if (task.retryNotification) {
       const attemptNumber = boundAttempt.attemptNumber
-      const retrySessionUrl = buildLocalSessionUrl(parentDirectory, sessionID)
+      const retrySessionUrl = buildLocalSessionUrl(childDirectory, sessionID)
       const previousAttempt = getPreviousAttempt(task, boundAttempt.attemptId)
       const failedSessionID = previousAttempt?.sessionId ?? task.retryNotification.previousSessionID
       const failedSessionLine = failedSessionID
@@ -937,7 +963,7 @@ The fallback retry session is now created and can be inspected directly.
     promptWithRetryInDirectory(this.client, {
       path: { id: sessionID },
       body: promptBody,
-    }, parentDirectory).catch(async (error) => {
+    }, childDirectory).catch(async (error) => {
       // Retry with fallback agent if the original agent was unregistered (e.g., after a model switch)
       if (isAgentNotFoundError(error) && input.agent !== FALLBACK_AGENT) {
         log("[background-agent] Agent not found, retrying with fallback agent", {
@@ -964,7 +990,7 @@ The fallback retry session is now created and can be inspected directly.
           await promptWithRetryInDirectory(this.client, {
             path: { id: sessionID },
             body: fallbackBody,
-          }, parentDirectory)
+          }, childDirectory)
           task.agent = FALLBACK_AGENT
           return
         } catch (retryError) {
@@ -1026,28 +1052,15 @@ The fallback retry session is now created and can be inspected directly.
       }
     })
 
-    log("[background-agent] tmux callback check", {
-      hasCallback: !!this.onSubagentSessionCreated,
+    invokeTmuxSessionCreatedCallback({
+      callback: this.onSubagentSessionCreated,
       tmuxEnabled: this.tmuxEnabled,
-      isInsideTmux: isInsideTmux(),
+      suppress: input.suppressTmuxSpawn === true,
       sessionID,
       parentID: input.parentSessionId,
+      title: input.description,
+      log,
     })
-
-    if (!input.suppressTmuxSpawn && this.onSubagentSessionCreated && this.tmuxEnabled && isInsideTmux()) {
-      log("[background-agent] Invoking tmux callback (fire-and-forget)", { sessionID })
-      void this.onSubagentSessionCreated({
-        sessionID,
-        parentID: input.parentSessionId,
-        title: input.description,
-      }).catch((err) => {
-        log("[background-agent] Failed to spawn tmux pane:", err)
-      })
-    } else {
-      log("[background-agent] SKIP tmux callback - conditions not met", {
-        suppressTmuxSpawn: !!input.suppressTmuxSpawn,
-      })
-    }
   }
 
   getTask(id: string): BackgroundTask | undefined {
@@ -1157,6 +1170,22 @@ The fallback retry session is now created and can be inspected directly.
       }
     }
     return undefined
+  }
+
+  /**
+   * Marks a session as being polled by a run_in_background=false continuation so the
+   * completion cleanup timer neither drops the task nor deletes the session underneath it.
+   * The returned detach restarts the cleanup grace window once the waiter leaves.
+   */
+  attachSyncContinuation(sessionID: string): () => void {
+    this.syncAttachedSessions.add(sessionID)
+    return () => {
+      if (!this.syncAttachedSessions.delete(sessionID)) return
+      const task = this.findBySession(sessionID)
+      if (!task || !TERMINAL_BACKGROUND_TASK_STATUSES.has(task.status)) return
+      if (this.completionTimers.has(task.id)) return
+      this.scheduleTaskRemoval(task.id)
+    }
   }
 
   private resolveTaskAttemptBySession(sessionID: string): { task: BackgroundTask; attemptID?: string; isCurrent: boolean } | undefined {
@@ -1306,11 +1335,10 @@ The fallback retry session is now created and can be inspected directly.
     }
 
     if (existingTask.status === "running") {
-      log("[background-agent] Resume skipped - task already running:", {
-        taskId: existingTask.id,
-        sessionID: existingTask.sessionId,
-      })
-      return existingTask
+      throw new Error(
+        `Task ${existingTask.id} is currently running and cannot accept a continuation prompt. ` +
+        "Wait for it to complete before resuming it with task_id.",
+      )
     }
 
     const resumeSnapshot = this.captureResumeTaskSnapshot(existingTask)
@@ -1421,7 +1449,7 @@ The fallback retry session is now created and can be inspected directly.
           })(),
           parts: [createInternalAgentTextPart(input.prompt)],
         },
-        query: { directory: this.directory },
+        query: { directory: existingTask.cwd ?? this.directory },
       },
     }).then((promptResult) => {
       if (promptResult.status === "failed") {
@@ -1546,18 +1574,6 @@ The fallback retry session is now created and can be inspected directly.
     this.observedIncompleteTodosBySession.delete(sessionID)
   }
 
-  private messageUpdatedInfoHasParentWakeOutput(info: Record<string, unknown>, role: unknown): boolean {
-    if (role === "tool") {
-      return true
-    }
-    if (role !== "assistant") {
-      return false
-    }
-    if (info.error) {
-      return false
-    }
-    return !isEmptyNoProgressAssistantTurnInfo(info)
-  }
 
   private shouldHoldDispatchedParentWakeForTextDelta(
     eventType: string,
@@ -2079,13 +2095,21 @@ The fallback retry session is now created and can be inspected directly.
     const sessionId = task.sessionId
     if (sessionId) {
       const sessionStillAlive = await this.verifySessionExists(sessionId)
-      if (sessionStillAlive) {
+      if (sessionStillAlive && !isTerminalSessionError(errorInfo)) {
         this.logger("[background-agent] session.error received but session still alive, treating as transient:", {
           taskId: task.id,
           sessionId,
           errorMessage: errorMsg?.slice(0, 200),
         })
         return
+      }
+      if (sessionStillAlive && isTerminalSessionError(errorInfo)) {
+        this.logger("[background-agent] Finalizing task after terminal session.error (session shell alive but will never produce output):", {
+          taskId: task.id,
+          sessionId,
+          errorName,
+          errorMessage: errorMsg?.slice(0, 200),
+        })
       }
     }
 
@@ -2331,10 +2355,13 @@ The task was re-queued on a fallback model after a retryable failure.
       this.completionTimers.delete(taskId)
     }
 
-    const timer = setTimeout(() => {
+    const timer = setTimeout(async () => {
       this.completionTimers.delete(taskId)
       const task = this.tasks.get(taskId)
       if (!task) return
+
+      // A sync waiter is still polling this session; its detach re-arms removal.
+      if (task.sessionId && this.syncAttachedSessions.has(task.sessionId)) return
 
       if (task.parentSessionId) {
         const siblings = this.getTasksByParentSession(task.parentSessionId)
@@ -2356,6 +2383,12 @@ The task was re-queued on a fallback model after a retryable failure.
         subagentSessions.delete(task.sessionId)
         clearDelegatedChildSessionBootstrap(task.sessionId)
         SessionCategoryRegistry.remove(task.sessionId)
+        const deleteSession = this.client.session.delete?.bind(this.client.session)
+        if (typeof deleteSession === "function") {
+          await deleteSession({ path: { id: task.sessionId } }).catch((error: unknown) => {
+            log("[background-agent] Failed to delete completed subagent session:", { sessionID: task.sessionId, error: String(error) })
+          })
+        }
       }
       log("[background-agent] Removed completed task from memory:", taskId)
     }, this.config?.taskCleanupDelayMs ?? TASK_CLEANUP_DELAY_MS)
@@ -2794,6 +2827,48 @@ The task was re-queued on a fallback model after a retryable failure.
     return isOpenCodeSessionActive(resolved.client as Parameters<typeof isOpenCodeSessionActive>[0], sessionID)
   }
 
+  private recordScheduledFlushSettled(sessionID: string): void {
+    this.updateBackgroundTaskMarker(sessionID)
+    this.scheduledFlushSettledCounts.set(sessionID, (this.scheduledFlushSettledCounts.get(sessionID) ?? 0) + 1)
+    const waiters = this.scheduledFlushSettledWaiters.get(sessionID)
+    if (waiters && waiters.length > 0) {
+      this.scheduledFlushSettledWaiters.set(sessionID, [])
+      for (const waiter of waiters) {
+        waiter()
+      }
+    }
+  }
+
+  /**
+   * Test-only: monotonic count of scheduled parent-wake flushes that have settled
+   * for this session (the real onScheduledFlushSettled signal). Capture this
+   * BEFORE triggering a flush, then awaitScheduledFlush(sessionID, captured) so a
+   * settle that races between trigger and await is not missed.
+   */
+  getScheduledFlushSettledCount(sessionID: string): number {
+    return this.scheduledFlushSettledCounts.get(sessionID) ?? 0
+  }
+
+  /**
+   * Test-only: resolves once the settled-flush count for this session exceeds
+   * `sinceCount` (captured before the flush was triggered). Deterministic — no
+   * blind sleep past the debounce, and no registration-after-settle race.
+   */
+  awaitScheduledFlush(sessionID: string, sinceCount: number): Promise<void> {
+    return new Promise<void>((resolve) => {
+      const arm = (): void => {
+        if ((this.scheduledFlushSettledCounts.get(sessionID) ?? 0) > sinceCount) {
+          resolve()
+          return
+        }
+        const waiters = this.scheduledFlushSettledWaiters.get(sessionID) ?? []
+        waiters.push(arm)
+        this.scheduledFlushSettledWaiters.set(sessionID, waiters)
+      }
+      arm()
+    })
+  }
+
   private queuePendingParentWake(
     sessionID: string,
     notification: string,
@@ -3132,6 +3207,7 @@ The task was re-queued on a fallback model after a retryable failure.
       clearTimeout(timer)
     }
     this.completionTimers.clear()
+    this.syncAttachedSessions.clear()
 
     for (const timer of this.idleDeferralTimers.values()) {
       clearTimeout(timer)

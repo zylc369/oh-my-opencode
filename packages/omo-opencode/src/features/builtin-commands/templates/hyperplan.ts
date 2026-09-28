@@ -8,10 +8,10 @@ skill(name="hyperplan")
 
 After loading the skill, follow its 7-phase workflow EXACTLY using this user request.
 
-Roster contract: call \`team_create\` with category members \`unspecified-low\`, \`unspecified-high\`, \`ultrabrain\`, and \`artistry\`. Include \`deep\` only if the category is enabled; if \`deep\` is disabled or unavailable, retry without only that member and state the degraded roster.
+Roster contract: call \`team_create\` with category members \`unspecified-low\`, \`unspecified-high\`, \`ultrabrain\`, and \`artistry\`. Include \`deep-low\` only if the category is enabled; if \`deep-low\` is disabled or unavailable, retry without only that member and state the degraded roster.
 
 <user-request>
 $ARGUMENTS
 </user-request>
 
-If team-mode is unavailable (\`team_*\` tools missing), instruct the user to set \`team_mode.enabled: true\` in \`~/.config/opencode/oh-my-opencode.jsonc\` and restart opencode.`
+If team-mode is unavailable (\`team_*\` tools missing), instruct the user to set \`team_mode.enabled: true\` in \`~/.omo/omo.jsonc\` and restart opencode.`

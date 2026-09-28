@@ -1,5 +1,14 @@
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	cpSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	readdirSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,14 +24,14 @@ const HOOK_EVENTS_BY_COMPONENT = {
 	"lazycodex-executor-verify": "subagent-stop",
 	lsp: "post-compact",
 	rules: "session-start",
-	"start-work-continuation": "stop",
+	"ulw-execute-continuation": "stop",
 	telemetry: "session-start",
 	teammode: "post-tool-use",
 	ultrawork: "user-prompt-submit",
 	"ulw-loop": "pre-tool-use",
 };
-const MCP_ONLY_COMPONENTS = new Set(["codegraph"]);
 const HOOK_CLI_TEST_TIMEOUT_MS = 45_000;
+const DAEMON_EXIT_TIMEOUT_MS = 5_000;
 
 test("#given required component CLI contracts #when workspaces are inspected #then every contract component is covered", async () => {
 	// given
@@ -73,38 +82,6 @@ test("#given built workspace component CLIs #when dynamically imported with hook
 	assert.deepEqual(failures, []);
 });
 
-test("#given built MCP-only CodeGraph entries #when executed with a fake binary #then each entry is self-contained", () => {
-	const tempRoot = mkdtempSync(join(tmpdir(), "omo-codex-mcp-wrapper-"));
-	try {
-		const fakeBinaryPath = join(tempRoot, "codegraph-fake.cjs");
-		const invocationLogPath = join(tempRoot, "invocations.log");
-		writeFileSync(
-			fakeBinaryPath,
-			[
-				"#!/usr/bin/env node",
-				"const fs = require('node:fs');",
-				"fs.appendFileSync(process.env.CODEGRAPH_FAKE_LOG, JSON.stringify(process.argv.slice(2)) + '\\n');",
-				"",
-			].join("\n"),
-		);
-		chmodSync(fakeBinaryPath, 0o755);
-
-		const serveResult = runCodegraphMcpEntry("serve.js", tempRoot, fakeBinaryPath, invocationLogPath);
-		const cliResult = runCodegraphMcpEntry("cli.js", tempRoot, fakeBinaryPath, invocationLogPath);
-
-		assert.equal(serveResult.status, 0, `serve.js stderr: ${serveResult.stderr}`);
-		assert.equal(cliResult.status, 0, `cli.js stderr: ${cliResult.stderr}`);
-		assert.equal(serveResult.stderr, "");
-		assert.equal(cliResult.stderr, "");
-		assert.deepEqual(readFileSync(invocationLogPath, "utf8").trim().split("\n"), [
-			'["serve","--mcp"]',
-			'["serve","--mcp"]',
-		]);
-	} finally {
-		rmSync(tempRoot, { recursive: true, force: true });
-	}
-});
-
 test("#given representative component hook payloads #when executed through dist CLI contract #then current hook behavior is preserved", async () => {
 	const tempRoot = mkdtempSync(join(tmpdir(), "omo-codex-cli-contract-"));
 	try {
@@ -125,29 +102,84 @@ test("#given representative component hook payloads #when executed through dist 
 	}
 });
 
-test("#given bundled LSP hook CLI in installed layout #when diagnostics run #then it spawns sibling daemon target", () => {
+test("#given bundled LSP hook CLI in installed layout #when diagnostics run #then it spawns sibling daemon target", async () => {
 	const tempRoot = mkdtempSync(join(tmpdir(), "omo-codex-lsp-installed-"));
 	try {
 		const lspDist = join(tempRoot, "components", "lsp", "dist");
 		const daemonDist = join(tempRoot, "components", "lsp-daemon", "dist");
 		const daemonDir = join(tempRoot, "daemon");
-		const invocationLog = join(tempRoot, "fake-daemon-invocations.jsonl");
 		mkdirSync(lspDist, { recursive: true });
 		mkdirSync(daemonDist, { recursive: true });
 		mkdirSync(join(tempRoot, "src"), { recursive: true });
 		writeFileSync(join(tempRoot, "package.json"), JSON.stringify({ type: "module" }));
 		writeFileSync(join(lspDist, "cli.js"), readFileSync(componentCliPath("lsp"), "utf8"));
-		writeFileSync(join(daemonDist, "package.json"), JSON.stringify({ type: "module", version: "0.1.0" }));
-		writeFakeLspDaemonCli(join(daemonDist, "cli.js"));
-		const editedFile = join(tempRoot, "src", "broken.c");
-		writeFileSync(editedFile, "int main(void) { return missing_symbol; }\n");
+		cpSync(join(root, "..", "..", "lsp-daemon", "dist"), daemonDist, { recursive: true });
+		const editedFile = join(tempRoot, "src", "broken.ts");
+		const scenarioPath = join(tempRoot, "scenario.json");
+		const eventsPath = join(tempRoot, "lsp-events.jsonl");
+		const codexHome = join(tempRoot, "codex-home");
+		mkdirSync(codexHome, { recursive: true });
+		writeFileSync(editedFile, "const value: string = 1;\n");
+		writeFileSync(eventsPath, "");
+		writeFileSync(
+			scenarioPath,
+			JSON.stringify({
+				publishDiagnostics: [
+					{
+						trigger: "didOpen",
+						version: 1,
+						diagnostics: [
+							{
+								range: { start: { line: 0, character: 6 }, end: { line: 0, character: 11 } },
+								severity: 1,
+								code: "fake",
+								source: "fake",
+								message: "Missing fake symbol.",
+							},
+						],
+					},
+				],
+				diagnosticResponses: [
+					{
+						report: {
+							items: [
+								{
+									range: { start: { line: 0, character: 6 }, end: { line: 0, character: 11 } },
+									severity: 1,
+									code: "fake",
+									source: "fake",
+									message: "Missing fake symbol.",
+								},
+							],
+						},
+					},
+				],
+			}),
+		);
+		writeFileSync(
+			join(codexHome, "lsp-client.json"),
+			JSON.stringify({
+				lsp: {
+					typescript: {
+						command: [
+							process.execPath,
+							join(root, "..", "..", "lsp-core", "src", "lsp", "fixtures", "workspace-edit-server.mjs"),
+							scenarioPath,
+							eventsPath,
+						],
+						extensions: [".ts"],
+					},
+				},
+			}),
+		);
 
 		const result = spawnSync(process.execPath, [join(lspDist, "cli.js"), "hook", "post-tool-use"], {
 			cwd: tempRoot,
 			encoding: "utf8",
 			env: hookEnv(tempRoot, {
-				CODEX_LSP_DAEMON_DIR: daemonDir,
-				FAKE_LSP_DAEMON_LOG: invocationLog,
+				CODEX_HOME: codexHome,
+				OMO_LSP_DAEMON_DIR: daemonDir,
+				NODE_PATH: "",
 			}),
 			input: JSON.stringify({
 				session_id: "bundled-lsp-hook",
@@ -158,17 +190,17 @@ test("#given bundled LSP hook CLI in installed layout #when diagnostics run #the
 			timeout: HOOK_CLI_TEST_TIMEOUT_MS,
 		});
 
-		const daemonInvocations = existsSync(invocationLog) ? readFileSync(invocationLog, "utf8") : "";
-		const failureContext = `stdout: ${result.stdout}\nstderr: ${result.stderr}\ndaemon log: ${daemonInvocations}`;
+		const failureContext = `stdout: ${result.stdout}\nstderr: ${result.stderr}`;
 		assert.equal(result.status, 0, failureContext);
 		assert.equal(result.stderr, "", failureContext);
 		assert.notEqual(result.stdout, "", failureContext);
 		const parsed = JSON.parse(result.stdout);
 		assert.equal(parsed.decision, "block");
-		assert.match(parsed.reason, /error\[fake\] \(1\) at 1:1: Missing fake symbol\./);
-		assert.deepEqual(daemonInvocations.trim().split("\n").map(JSON.parse), [["daemon"]]);
-		assert.equal(existsSync(join(daemonDir, "v0.1.0", "daemon.log")), true);
+		assert.match(parsed.reason, /Missing fake symbol\./);
+		assert.match(readFileSync(eventsPath, "utf8"), /textDocument\/publishDiagnostics/);
+		assert.equal(existsSync(join(daemonDir, `v${JSON.parse(readFileSync(join(daemonDist, "package.json"), "utf8")).version}`, "daemon.log")), true);
 	} finally {
+		await stopTestDaemons(join(tempRoot, "daemon"));
 		rmSync(tempRoot, { recursive: true, force: true });
 	}
 });
@@ -198,7 +230,6 @@ test("#given aggregate hook manifest #when command hooks are inspected #then com
 	// when
 	const missingContracts = components.filter(
 		(component) =>
-			!MCP_ONLY_COMPONENTS.has(component) &&
 			!commands.some((command) =>
 				command.startsWith(`node "\${PLUGIN_ROOT}/components/${component}/dist/cli.js" hook `),
 			),
@@ -213,7 +244,6 @@ async function workspaceComponents() {
 	return packageJson.workspaces
 		.filter((workspace) => workspace.startsWith("components/"))
 		.map((workspace) => workspace.slice("components/".length))
-		.filter((component) => !MCP_ONLY_COMPONENTS.has(component))
 		.sort();
 }
 
@@ -238,20 +268,6 @@ function collectHookCommands(hooksByEvent) {
 
 function componentCliPath(component) {
 	return join(root, "components", component, "dist", "cli.js");
-}
-
-function runCodegraphMcpEntry(entryName, tempRoot, fakeBinaryPath, invocationLogPath) {
-	return spawnSync(process.execPath, [join(root, "components", "codegraph", "dist", entryName)], {
-		cwd: root,
-		encoding: "utf8",
-		env: {
-			...process.env,
-			CODEGRAPH_FAKE_LOG: invocationLogPath,
-			HOME: tempRoot,
-			OMO_CODEGRAPH_BIN: fakeBinaryPath,
-		},
-		timeout: HOOK_CLI_TEST_TIMEOUT_MS,
-	});
 }
 
 function runHookCli(component, event, payload, tempRoot, extraEnv = {}) {
@@ -336,7 +352,7 @@ function writeFakeLspDaemonCli(path) {
 			'import { createServer } from "node:net";',
 			"",
 			"appendFileSync(process.env.FAKE_LSP_DAEMON_LOG, `${JSON.stringify(process.argv.slice(2))}\\n`);",
-			"const baseDir = process.env.CODEX_LSP_DAEMON_DIR;",
+			"const baseDir = process.env.OMO_LSP_DAEMON_DIR;",
 			'const versionDirName = readdirSync(baseDir).find((entry) => entry.startsWith("v")) ?? "v0";',
 			"const version = versionDirName.slice(1);",
 			"const dir = join(baseDir, versionDirName);",
@@ -372,6 +388,53 @@ function writeFakeLspDaemonCli(path) {
 			"",
 		].join("\n"),
 	);
+}
+
+async function stopTestDaemons(daemonRoot) {
+	if (!existsSync(daemonRoot)) return;
+	for (const versionDir of readdirSync(daemonRoot)) {
+		const pidPath = join(daemonRoot, versionDir, "daemon.pid");
+		if (!existsSync(pidPath)) continue;
+		const pid = Number(readFileSync(pidPath, "utf8").trim());
+		if (!Number.isInteger(pid) || pid <= 0) continue;
+		if (process.platform === "win32") {
+			const result = spawnSync("taskkill", ["/pid", String(pid), "/f", "/t"], {
+				encoding: "utf8",
+				windowsHide: true,
+			});
+			if (result.error) throw result.error;
+			if (result.status !== 0 && processIsRunning(pid)) {
+				throw new Error(
+					`taskkill failed for test daemon ${pid}: exit=${result.status} stderr=${result.stderr.trim()}`,
+				);
+			}
+		} else {
+			try {
+				process.kill(pid, "SIGTERM");
+			} catch (error) {
+				if (error instanceof Error && "code" in error && error.code === "ESRCH") continue;
+				throw error;
+			}
+		}
+		await waitForProcessExit(pid);
+	}
+}
+
+async function waitForProcessExit(pid) {
+	const deadline = Date.now() + DAEMON_EXIT_TIMEOUT_MS;
+	while (processIsRunning(pid)) {
+		if (Date.now() >= deadline) throw new Error(`Timed out waiting for test daemon ${pid} to exit`);
+		await new Promise((resolve) => setTimeout(resolve, 50));
+	}
+}
+
+function processIsRunning(pid) {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 function hookEnv(tempRoot, extraEnv = {}) {

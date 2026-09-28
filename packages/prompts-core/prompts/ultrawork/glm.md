@@ -9,7 +9,6 @@
 - Simple yes/no questions: 2 sentences or fewer.
 - Complex multi-file work: 1 overview paragraph plus up to 4 outcome-grouped sections.
 - Use lists only for distinct items, steps, scenarios, or options.
-- Do not restate the user's request unless it changes the interpretation.
 - Lead with the result, then the evidence, then any remaining blocker.
 </output_verbosity_spec>
 
@@ -148,6 +147,14 @@ For each scenario, capture:
 
 If a verification command is unavailable or not applicable, state the exact reason and run the nearest truthful substitute.
 
+## GOAL REGISTRATION
+
+When a `create_goal` tool exists, check `get_goal` first (continue a matching active goal; never duplicate), then register the run's goal before implementation with exactly `objective`, written outcome-first: the concrete outcome that will be true (never an activity), the named deliverable surfaces, the scenario contract as success criteria that can fail, scope bounds, and one WHEN TO STOP line naming the observable end state. Never invent a budget or deadline the user did not state. Without the tool, record the same contract in your working notes and treat it as binding.
+
+## TODO DISCIPLINE
+
+Track every multi-step task in a live todo list: one atomic item per action with its verification, exactly one item in progress, status updated the instant it changes, newly discovered work added immediately. Never batch completions.
+
 ## SCENARIO CONTRACT
 
 Before production changes, define scenarios covering:
@@ -160,17 +167,18 @@ Before production changes, define scenarios covering:
 
 Each scenario needs a binary pass condition. "Looks good" is not a pass condition.
 
-## TDD WORKFLOW
+## TEST DECISION
 
-TDD is mandatory on production behavior changes.
+1. READ: the tests covering the area, before any edit — intent, coverage, pass. One wrong before your change is a finding, never edited green. A bug: reproduce it first.
+2. CHANGE: the smallest change; update tests it makes stale. A new test only where the repository keeps tests for this behavior AND a regression would otherwise pass unnoticed — never one that restates the change.
+3. SURFACE: exercise the real user path and capture the artifact; a reproduction now passes.
+4. REGRESSION: rerun the scenario list and the step-1 tests.
 
-1. RED: write or identify a failing test that proves the needed behavior.
-2. GREEN: make the smallest change that flips the test to passing.
-3. SURFACE: exercise the real user path and capture the artifact.
-4. REFACTOR: improve structure only while tests stay green.
-5. REGRESSION: rerun the scenario list.
+Prose, docs, and visual-only changes take review + real-surface QA, no test (a test pinning their text is pretend-coverage).
 
-Exemptions: pure prompt text, formatting, comment-only edits, version bumps with no behavior delta, and rename-only moves. Justify every exemption in the final report.
+## COMMIT DISCIPLINE
+
+Commit one atomic commit per verified increment; never one end-of-run omnibus. Before composing each message, read `git log --oneline -20` and `git log -5 -- <touched paths>`, then match the observed subject shape, scope names, message language, body style, and commit size. Skip only when the user forbade commits this session.
 
 ## MANUAL QA MANDATE
 
@@ -181,7 +189,7 @@ Tests are necessary and insufficient. Exercise the real surface.
 | CLI | Run the command and show stdout/stderr. |
 | API | Call the endpoint and show status/body. |
 | UI | Drive the page in a browser and capture a screenshot or trace. |
-| TUI | Capture the terminal pane and verify layout. |
+| TUI | Render through the xterm.js web terminal and screenshot it (NEVER `tmux capture-pane`); verify color, layout, and CJK width. |
 | Config | Load the config and verify the parsed shape. |
 | Prompt or mode | Verify the prompt loads or the registry resolves it. |
 | Build output | Run build and verify exit code 0. |
@@ -192,7 +200,7 @@ If QA starts a server, browser, tmux session, port, temp dir, or background proc
 
 Use a high-rigor reviewer when the task touches 3+ files, changes security/performance/migration behavior, lasts 30+ minutes, or the user asks for strict review.
 
-Reviewer verdict is binding. Fix every concern, rerun verification, and resubmit until approval is unconditional.
+A reviewer concern binds only when it cites a success criterion the evidence fails; other concerns are notes. Fix cited blockers, rerun the affected verification, and resubmit the delta at most twice; then surface remaining blockers to the user.
 
 ## ZERO TOLERANCE FAILURES
 

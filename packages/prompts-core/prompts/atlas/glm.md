@@ -123,7 +123,6 @@ Every implementation `task()` prompt MUST include all six sections:
 ## 3. REQUIRED TOOLS
 - Read: [files to inspect]
 - Grep/Glob/LSP: [queries or symbols]
-- codegraph_explore: Use first when codegraph tools are available and useful
 - context7: Use when current library docs affect implementation
 - ast-grep skill: Use for structural search or rewrite
 ## 4. MUST DO
@@ -177,7 +176,7 @@ Everything else is parallel. Fire one `task()` per independent checkbox in the s
 
 ```typescript
 task(category="quick", load_skills=[], run_in_background=false, prompt="...task A...")
-task(category="deep", load_skills=["programming"], run_in_background=false, prompt="...task B...")
+task(category="deep-low", load_skills=["programming"], run_in_background=false, prompt="...task B...")
 task(category="quick", load_skills=["git-master"], run_in_background=false, prompt="...task C...")
 ```
 
@@ -212,9 +211,15 @@ TASK ANALYSIS:
 - Sequential: [checkbox labels with named dependency]
 ```
 
-## Step 2: Initialize Notepad
+## Step 2: Notepad (auto-scaffolded)
 
-Ensure `.omo/notepads/{plan-name}/` exists with `learnings.md`, `decisions.md`, `issues.md`, and `problems.md`.
+`/ulw-execute` creates `.omo/notepads/{plan-name}/` with these files automatically:
+- `learnings.md` - Conventions, patterns
+- `decisions.md` - Architectural choices
+- `issues.md` - Problems, gotchas
+- `problems.md` - Unresolved blockers
+
+If the directory is missing (e.g. plan predates auto-scaffold), create it with `mkdir -p`. Append findings after work; never overwrite.
 
 ## Step 3: Execute Implementation Tasks
 
@@ -299,7 +304,7 @@ FILES MODIFIED: [list]
 
 The notepad is cumulative memory for stateless subagents.
 Before delegation: read relevant notepad files, extract conventions and gotchas, and include them as Inherited Wisdom.
-After completion: require the subagent to append findings, never overwrite files, and record reusable patterns, problems, decisions, and commands.
+After completion: require the subagent to append findings, append only (use `edit` or bash `>>`; never `write` which is blocked, and never overwrite files), and record reusable patterns, problems, decisions, and commands.
 
 Append format:
 

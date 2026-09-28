@@ -23,6 +23,7 @@ export {
 } from "./model-resolver"
 export * from "./model-format-normalizer"
 export * from "./model-normalization"
+export * from "./reasoning-level"
 export * from "./model-string-parser"
 export * from "./model-sanitizer"
 export {
@@ -34,7 +35,6 @@ export {
 	transformModelForProviderDisplay,
 } from "./provider-model-id-transform"
 export * from "./fallback-chain-from-models"
-export * from "./known-variants"
 export {
   _setModelResolutionLogImplementationForTesting,
   resolveModelPipeline,
@@ -52,5 +52,6 @@ export * from "./provider-exhaustion-fallback-policy"
 export * from "./runtime-fallback-model"
 export * from "./model-capabilities"
 export * from "./context-limit-resolver"
+export * from "./context-overflow"
 export * from "./model-capabilities-snapshot"
 export * from "./parse-model-suggestion"

@@ -1,4 +1,5 @@
 import { spawn } from "../../shared/bun-spawn-shim"
+import { bunWhich } from "../../shared/bun-which-shim"
 import { join } from "path"
 import { existsSync } from "fs"
 import * as fs from "fs"
@@ -6,6 +7,7 @@ import { tmpdir } from "os"
 import {
   resolveCommentCheckerBinary,
   runCommentChecker as runCommentCheckerCore,
+  sendAndCloseStdin,
   type CheckResult,
   type HookInput,
 } from "@oh-my-opencode/comment-checker-core"
@@ -25,7 +27,7 @@ function getBinaryName(): string {
   return process.platform === "win32" ? "comment-checker.exe" : "comment-checker"
 }
 
-export function resolveCommentCheckerPathFromPath(binaryName: string, which: (binary: string) => string | null = Bun.which): string | null {
+export function resolveCommentCheckerPathFromPath(binaryName: string, which: (binary: string) => string | null = bunWhich): string | null {
   try {
     return which(binaryName)
   } catch (error) {
@@ -145,12 +147,20 @@ export async function runCommentChecker(input: HookInput, cliPath?: string, cust
       { hookInput: input, binaryPath, customPrompt },
       {
         existsSync,
-        spawn: (args: readonly string[]) =>
-          spawn([...args], {
+        spawn: (args: readonly string[]) => {
+          const subprocess = spawn([...args], {
             stdin: "pipe",
             stdout: "pipe",
             stderr: "pipe",
-          }),
+          })
+          return {
+            stdin: { send: (hookInput: string) => sendAndCloseStdin(subprocess.stdin, hookInput) },
+            stdout: subprocess.stdout,
+            stderr: subprocess.stderr,
+            exited: subprocess.exited,
+            kill: (signal) => subprocess.kill(signal),
+          }
+        },
       },
     )
     return result

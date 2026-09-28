@@ -15,12 +15,16 @@ function parseTarListedZipEntry(line: string): ArchiveEntry | null {
 	}
 
 	const [, rawType, rawEntryPath] = match
+	if (rawEntryPath === undefined) {
+		return null
+	}
+
 	if (rawType === "l" || rawType === "h") {
 		const arrowIndex = rawEntryPath.lastIndexOf(" -> ")
 		return {
 			path: arrowIndex === -1 ? rawEntryPath : rawEntryPath.slice(0, arrowIndex),
 			type: rawType === "l" ? "symlink" : "hardlink",
-			linkPath: arrowIndex === -1 ? undefined : rawEntryPath.slice(arrowIndex + 4),
+			...(arrowIndex === -1 ? {} : { linkPath: rawEntryPath.slice(arrowIndex + 4) }),
 		}
 	}
 
@@ -46,8 +50,7 @@ function validateParsedTarListing(
 export function parseTarListingOutput(stdout: string): ArchiveEntry[] {
 	const listingLines = stdout
 		.split(/\r?\n/)
-		.map(line => line.trim())
-		.filter(Boolean)
+		.filter(line => line.trim().length > 0)
 
 	if (listingLines.length === 0) {
 		return []
