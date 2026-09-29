@@ -1,3 +1,64 @@
+## 2026-09-29 - A umask 002 install no longer breaks every process child and team; a refused launch spec names itself (#9208)
+
+npm and bun extract `plugin/daemon-launch-spec.json` with the installing user's umask, so under `umask 002` (the Ubuntu
+default for users with a private group) it lands 0664. The task host refuses a group- or world-writable spec
+(`launch_spec_insecure`, unchanged), so every process-mode child and every `team_create` failed. New
+`bin/lib/launch-spec-mode.js` `normalizeLaunchSpecMode` removes only the group and world write bits, only from a regular
+file owned by the current user, using `lstat` so a symlink is never followed: a link or a file owned by another user is
+left as it is, and the host still refuses it. `engine-prepare.js` `preparePluginLaunchSpec` runs it fail-open (a failed
+chmod warns with `chmod 644 <path>` and never blocks the launch), and the launcher calls it on every launch through
+`preparedSenpi()` and before `omo doctor`, not behind the engine stamp, because reinstalling omo-ai rewrites the plugin
+while the engine keeps its stamp. postinstall (`senpi-patch.mjs`) runs it too, for installs whose scripts run. On
+Windows it does nothing: the host does not check modes there. The compiled binary needs no normalization, since its
+runtime extraction already sets each file to the mode recorded in its manifest (0644 for the spec).
+`launchSpecDoctorLines` applies the host's own rule (following symlinks, as the reader does) and `omo doctor`, npm and
+compiled, prints `FAIL launch spec: launch_spec_insecure: <path> ...` with `chmod 644 <path>` (or the ownership fix)
+and exits 1 when the spec would still be refused.
+
+## 2026-09-29 - `omo update --help` prints usage and an unknown flag is a usage error instead of an update (#9207)
+
+`isSelfUpdate()` routes `update` to the launcher whenever every argument after it is a flag or a self/senpi/omo target,
+and `runSelfUpdate()` only knew `--dry-run` and `--print`, so `omo update --help`, `-h` or a mistyped flag such as
+`--forse` ran the package-manager install. The routing and a new `updateUsageAnswer()` now live in
+`bin/lib/update-args.js`, shared by `launcher.js`, `self-update.js`, `compile-entry.ts` and `compiled-update.ts`.
+`--help` / `-h` print the `omo update` usage and exit 0; any other flag besides `--dry-run`, `--print` and the documented
+`--self` exits 2 with `omo update: unknown option <flag>` on stderr. Both answers come before the registry lookup, so
+nothing is fetched or installed. The compiled binary answers the same way before its GitHub release lookup; that path
+only ever prints the replace command, and its `--dry-run` / `--print` output is unchanged. Plain `omo update`,
+`--dry-run`, `--print`, `--self` and the self/senpi/omo targets behave as before, and `update --extensions` /
+`update --models` still go to the engine. `test/self-update-usage.test.ts` and `test/compiled-update-usage.test.ts`
+cover both paths with installer and release-lookup spies; on dev 16 of their 33 cases failed, all of them the help and
+unknown-flag cases.
+
+## 2026-09-29 - `omo update` installs the exact published version and fails when the install did not move (#9198)
+
+On a Bun-global install, `omo update` could exit 0 with the old version still installed: `updateTarget()` spawned the
+unpinned `bun add -g omo-ai` (or `omo-ai@beta`), and `runSelfUpdate()` counted any manager exit 0 as success, so
+`omo 5.1.1 -> 5.1.1` read as an update. `runSelfUpdate()` now reads the running version's channel dist-tag (`latest` or
+`beta`) through the same registry lookup `omo doctor` uses for `Latest`, which moved from `doctor.js` into
+`bin/lib/npm-dist-tags.js`, and `updateTarget()` takes that version and installs the exact spec for every layout it
+handles: `bun add -g omo-ai@<version>` for Bun global and legacy Bun home-root installs, `npm i -g omo-ai@<version>` for
+npm. Already on that version, `omo update` says `omo <version> is up to date` and installs nothing. After a manager exit
+0 it re-reads the installed version; if it is not the target it prints `omo is still <version>; <target> is published`
+with the exact retry command and exits 1. `--dry-run` and `--print` show the pinned command. When the registry cannot be
+reached it says it could not confirm the version and runs the unpinned channel spec as before. The `INFO Update:` line
+of `omo doctor` and the engine's update hint keep the unpinned channel spec.
+
+## 2026-09-29 - The launch banner and routine launch notices print without Bun's error color (#8442)
+
+`bin/lib/launcher.js` writes the interactive version banner, the `sibling credentials detected` hint and the `carried forward settings from the legacy ~/.omo layout` notice with `process.stderr.write` instead of `console.error`, and `compile-entry.ts` does the same for `compiledBannerLines`. Under Bun, `console.error` wraps every line in ANSI red on a color terminal, so a healthy start looked like a failure. The lines stay on stderr with the same text; real error lines (`could not adopt legacy state`, the `ulw-loop` refusal) keep `console.error`. Measured on a PTY with `FORCE_COLOR=1` and the pinned engine: dev printed `\e[0m\e[31momo (omo-ai 5.1.2)\e[0m`, this change prints `omo (omo-ai 5.1.2)`, and the color-stripped `omo --help` output is byte-identical (228 lines, exit 0). `test/launcher-banner-color.test.ts` fails on dev and passes here. Contributed by @cynkai.
+
+## 2026-09-29 - `omo doctor` names the active config dir and flags edits left in ~/.pi/agent (#9173)
+
+`bin/lib/doctor-pi-config.js` adds two kinds of lines to both doctor paths (`bin/lib/doctor.js` and the compiled
+`compile-entry.ts`): `INFO config dir: <agent dir>` always, and one `WARN You edited ~/.pi/agent/<file> after omo moved
+to <agent dir>; omo reads <agent dir>/<file>. Copy your change there (or run: omo config import-pi <file>).` for each of
+`auth.json`, `keybindings.json`, `models.json`, `settings.json` changed in `~/.pi/agent` after the engine copied it and
+different from the agent dir's copy. The rule mirrors the engine's startup notice (senpi `src/legacy-pi-edits.ts`): it
+reads the `legacyPiAgentDir.copiedAt` the engine records in `migrations-state.json` and, for installs copied before that
+record existed, falls back to the agent copy's preserved mtime. Unlike the engine notice, doctor reports every such edit
+on every run. `~/.pi/agent` is only read.
+
 ## 2026-09-28 - The compiled binary enters a shard supervisor without the engine CLI graph
 
 `compile-entry.ts` routes an `--internal-rpc-host-supervisor` launch through `supervisor-fast-path.ts`, which applies

@@ -1,3 +1,84 @@
+## 2026-09-30 - deep-low leads with GPT-6.1 Sol at medium (#9214)
+
+- `category/fallback-chains.ts` `deep-low`: `gpt-6.1-sol` (medium) on `chatgpt-subscription|openai`, then `gpt-6.1-sol-fast`
+  (medium) on the same lanes, then the unchanged `gpt-5.6-sol` (medium, all four GPT lanes) and `gpt-5.6-sol-fast` (medium)
+  rungs. The comment above the chain says why: 6.1 Sol is served only on the two OpenAI lanes, so 5.6 Sol keeps Copilot,
+  OpenCode Zen and a registry without 6.1 on the lane at the same effort.
+- `category/openai-categories.ts`: the builtin default becomes `chatgpt-subscription/gpt-6.1-sol` medium and
+  `DEEP_LOW_GATE_MODELS` becomes `gpt-6.1-sol`, `gpt-6.1-sol-fast`, `gpt-5.6-sol-fast`, `gpt-5.6-sol`, so a 5.6-Sol-only
+  registry still opens the lane. The task tool's listing annotation reads `(requires gpt-6.1-sol or gpt-6.1-sol-fast or
+  gpt-5.6-sol-fast or gpt-5.6-sol)`.
+- Tests: `fallback-chains.test.ts`, `resolve-category.test.ts` and `openai-categories.test.ts` pin the new chain, default and
+  gate; two new `openai-categories.test.ts` cases resolve `gpt-6.1-sol` over `gpt-5.6-sol` on the subscription lane and
+  the 6.1 Fast tier over plain 5.6 Sol; `gated-categories.test.ts` pins the new annotation. `scripts/manual-category-qa.ts`
+  expects the gate's attempted model `chatgpt-subscription/gpt-6.1-sol`.
+
+## 2026-09-29 - A refused launch spec is a typed start failure that names the file and its fix (#9208)
+
+- `runners/rpc-host/daemon.ts` `loadDaemonLaunchSpec`: a `DaemonLaunchSpecError("launch_spec_insecure")` from
+  `readDaemonLaunchSpec` becomes `HostUnavailableError("launch_spec_insecure")` with `fallbackAllowed: false` and the
+  spec path. `rejectInsecureMode` is unchanged. Before, the error was not a `HostUnavailableError`, so `RpcHostRunner`
+  wrapped it as `host_unavailable` with no reason and every surface said only "The task host is unavailable."
+- `launch_spec_insecure` joins `HOST_START_FAILURE_REASONS`; `RunnerFailure.launch_spec_path` carries the path omo
+  resolved itself (never child output). `manager/start-failure.ts` `describeStartFailure` names it, home-relative, in
+  the public message with `chmod 644 <path>`, so the task record's `failure_reason` / `error_message`, the task tool
+  result and the `team_create` error (`member '<name>' failed to start: ...`) all show it. Rollback to R0 drops the new
+  reason like every post-R0 reason.
+- `TaskDaemonPorts.launchSpecPath` lets a test point the ensure at a spec file on disk.
+- `runners/rpc-host-launch-spec.test.ts`: a 0664 spec fails typed with the path and never falls back, the same spec at
+  0644 opens on the host, and the record plus the team error name the reason, the path and the fix.
+
+## category: quick ends with glm-5.3-flash and mimo-v2.6-flash, so a Z.ai-only or Xiaomi-only machine has a quick model (#9202)
+
+- `CATEGORY_FALLBACK_CHAINS.quick` appends `zai|zai-coding-cn/glm-5.3-flash (low)` and `xiaomi/mimo-v2.6-flash (low)`
+  after `claude-haiku-4-5`. Trailing keeps every provider set that resolved quick before on the same model. `low` is
+  the lowest effort both accept: `glm-5.3-flash` maps `off` to null and `mimo-v2.6-flash` cannot disable thinking.
+- `quick-single-provider.test.ts` resolves quick on a `zai`, `zai-coding-cn` and `xiaomi` registry (red on dev: no
+  rung, `model_unavailable`) and pins that haiku still wins when a Claude login is present. `coverage.test.ts` now
+  lists quick as usable on a Z.ai-only machine; `dead-chain.test.ts` and `fallback-chains.test.ts` list the new rungs.
+
+## store: task state moves out of the user's repository (#9201, DESKTOP-31)
+
+- `store/project-state-directory.ts`: `resolveProjectStateDirectory(projectDir, name)` puts a project's runtime state at
+  `<agent dir>/projects/<folder>-<sha256 of the path, 12 hex>/<name>`, the agent dir being the first of
+  `OMO_`/`SENPI_`/`PI_CODING_AGENT_DIR`, else `<HOME>/.omo/agent`. The path hash keeps two same-named projects apart. A
+  `<project>/.omo/<name>` an earlier release created keeps winning, so in-flight tasks and resumable DAG runs recorded there
+  stay reachable. The module imports only node builtins so QA drivers load it directly.
+- `store/state-dir.ts` `resolveStateDir` uses it; an explicit `task.state_dir` still wins. Before, the default was
+  `<project>/.omo/senpi-task`, an untracked folder in every repository a session ran in.
+- Tests that pinned the old default read the resolved directory instead; `claim-race.test.ts` passes its environment to the
+  spawned children so they resolve under the hermetic test HOME.
+
+## lifecycle: a reopened parent reclaims its live daemon child when the host that owned it died (#9183)
+
+- `lifecycle/reconcile.ts` `hasForeignLiveOwner`: a resident host-session record whose daemon session is still live stayed
+  foreign-owned forever once the process that ran its task manager died. With one engine host per parent session that owner
+  is the parent's own host, so killing it left the finished child recorded `running`/`resident` and every surface kept
+  showing a working subagent. The record's own parent session now reclaims it when `host_pid` names a dead foreign process;
+  any other session, and a live owner, still defer (`foreign_live_owner`), and a dead session still falls through (#8659).
+  `host-session-revival.test.ts` pins both sides: dead owner -> resumed on the recorded session path, live owner -> deferred.
+
+## unspecified-low opens on Claude Sonnet 5.5; deep-low opens on plain GPT-5.6 Sol
+
+`CATEGORY_FALLBACK_CHAINS["unspecified-low"]` and the builtin category config now lead with
+`anthropic-subscription|anthropic|anthropic-api|github-copilot|opencode/claude-sonnet-5-5 (medium)`; every earlier rung
+follows in its previous order, so the chain is 8 rungs. `CATEGORY_FALLBACK_CHAINS["deep-low"]` swaps its two rungs: plain
+`gpt-5.6-sol (medium)` on `chatgpt-subscription|openai|github-copilot|opencode` first, `gpt-5.6-sol-fast (medium)` on
+`chatgpt-subscription|openai` second, and the builtin config is `chatgpt-subscription/gpt-5.6-sol`. `DEEP_LOW_GATE_MODELS`
+is unchanged (either tier opens the lane). `unspecified-low-chain.test.ts` proves order against a registry that serves every
+rung at once: sonnet-5-5 wins, then mimo-v2.6-pro once it is removed, then grok-4.7. omo#9144.
+
+## category, agents: builtin chains resolve only on the providers they list (#9146)
+
+- A machine whose only provider was a gateway (OpenRouter, opengateway, a Vercel gateway) ran builtin categories and agents
+  on that gateway's copy of the rung model, so an OpenRouter key was billed for Opus 5.5, GPT-6 Astra and, where the gateway
+  spells it `claude-fable-5-1`, Fable. `delegate-core` no longer matches a rung on an unlisted provider unless the caller
+  passes `allowUnlistedProviders` (only the omo-senpi `model_profile` matcher does), and `category/builtins.ts` gates and
+  chain viability count only models served by a provider the chain lists (`resolver.ts` dropped the gateway-id unwrap
+  `modelIdsOf`). A gateway-only machine now sees every builtin as unavailable and hidden; an explicit
+  `categories.<name>.model`/`models` or agent `model` naming the gateway still resolves on it, and a mixed registry picks
+  the listed provider. `category/listed-providers-only.test.ts` pins it on OpenRouter- and opengateway-shaped registries.
+
 ## lifecycle: the revival selector names the children it leaves suspended `deferred`
 
 - `lifecycle/revival-selection.ts` / `residency.ts`: `selectRevivalBatch` returns `{ selected, deferred }` (was `overflow`): the

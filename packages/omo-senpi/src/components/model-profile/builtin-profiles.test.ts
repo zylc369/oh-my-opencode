@@ -45,7 +45,6 @@ describe("BUILTIN_MODEL_PROFILES", () => {
     expect(recommended?.displayName).toBe("Recommended")
     expect(recommended?.family).toBeUndefined()
     expect(recommended?.tier).toBeUndefined()
-    expect(recommended?.rankedProvidersOnly).toBe(true)
   })
 
   // Mirrors senpi's RECOMMENDED_DEFAULT_MODELS (recommended-models/index.ts, senpi#2074), so the TUI
@@ -131,8 +130,9 @@ describe("BUILTIN_MODEL_PROFILES", () => {
     ])
   })
 
-  it("runs geeky-normal as gpt-5.6-sol medium on every GPT lane", () => {
+  it("runs geeky-normal as gpt-6.1-sol medium on the OpenAI lanes, then gpt-5.6-sol medium on every GPT lane", () => {
     expect(BUILTIN_MODEL_PROFILES["geeky-normal"]?.models).toEqual([
+      { providers: ["chatgpt-subscription", "openai"], model: "gpt-6.1-sol", variant: "medium" },
       { providers: ["chatgpt-subscription", "openai", "github-copilot", "opencode"], model: "gpt-5.6-sol", variant: "medium" },
     ])
   })

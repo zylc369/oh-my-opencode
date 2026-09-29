@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { isolatedChildEnv } from "./sandbox-child-env.mjs";
+import { engineStateDir, isolatedChildEnv, sandboxStateDir } from "./sandbox-child-env.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -32,6 +32,21 @@ describe("isolatedChildEnv", () => {
 			PI_CODING_AGENT_DIR: "/tmp/sbx/agent",
 		});
 		expect(caller.OMO_CODING_AGENT_DIR).toBe("/home/u/.omo/agent");
+	});
+});
+
+describe("sandboxStateDir", () => {
+	test("resolves where an isolatedChildEnv child's engine keeps state, never the caller's agent dir", () => {
+		const sandbox = { cwd: "/tmp/sbx-absent/project", agentDir: "/tmp/sbx-absent/agent" };
+		const caller = { OMO_CODING_AGENT_DIR: "/home/u/.omo/agent", HOME: "/home/u" };
+
+		const stateDir = sandboxStateDir(sandbox);
+
+		expect(stateDir).toBe(engineStateDir(sandbox.cwd, isolatedChildEnv(caller, sandbox.agentDir)));
+		// The engine resolves the agent dir, so on Windows `/tmp/...` gains the drive letter: compare resolved paths.
+		const insideProjects = relative(resolve(sandbox.agentDir, "projects"), stateDir);
+		expect(isAbsolute(insideProjects) || insideProjects.split(sep)[0] === "..").toBe(false);
+		expect(stateDir).not.toBe(engineStateDir(sandbox.cwd, caller));
 	});
 });
 
