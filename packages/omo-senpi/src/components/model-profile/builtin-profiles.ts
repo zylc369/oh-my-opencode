@@ -29,10 +29,10 @@ import type { DelegateFallbackEntry } from "@oh-my-opencode/delegate-core"
  *
  * Unset sessions run `recommended`, which is not a lane (no family/tier): the same
  * ladder senpi's `recommended-models` builtin ships (`RECOMMENDED_DEFAULT_MODELS`,
- * senpi#2074), so the TUI and the desktop start from one order. Its rungs are served
- * ONLY by their ranked lanes (`rankedProvidersOnly`): the cross-provider fallback the
- * lanes keep would otherwise pull a gateway aggregator's vendor-prefixed copy
- * (`opengateway/anthropic/claude-opus-5-5`) into the default.
+ * senpi#2074), so the TUI and the desktop start from one order. Every builtin rung, in
+ * `recommended` and in the lanes, is served ONLY by its listed providers: a gateway
+ * aggregator's vendor-prefixed copy (`opengateway/anthropic/claude-opus-5-5`) never
+ * becomes the session model (#9146).
  */
 export type ModelProfileFamily = "daily" | "geeky"
 export type ModelProfileTier = "normal" | "heavy"
@@ -43,8 +43,6 @@ export type BuiltinModelProfile = {
   /** Picker axes; absent on `recommended`, which is the default rather than a lane. */
   readonly family?: ModelProfileFamily
   readonly tier?: ModelProfileTier
-  /** Serve each rung only from its listed providers, with no cross-provider fallback. */
-  readonly rankedProvidersOnly?: boolean
   readonly models: readonly DelegateFallbackEntry[]
 }
 
@@ -56,6 +54,9 @@ const KIMI_PROVIDERS = ["kimi-coding", "kimi-for-coding", "moonshotai", "opencod
 // Engine Z.AI ids. `omo setup` imports OpenCode's `zai-coding-plan` key as `zai` (#8799).
 const GLM_PROVIDERS = ["zai", "zai-coding-cn", "opencode-go"] as const
 const GPT_PROVIDERS = ["chatgpt-subscription", "openai", "github-copilot", "opencode"] as const
+// GPT-6.1 Sol is served only on the two OpenAI lanes (not Copilot or OpenCode Zen), so its rung lists
+// just those; the GPT-5.6 Sol rung behind it keeps the lane on every GPT provider.
+const GPT_6_1_PROVIDERS = ["chatgpt-subscription", "openai"] as const
 
 // Key order is the order a picker renders. `deep` is deliberately NOT an id: builtin
 // delegation categories already carry that name, and the two axes never compete (a
@@ -67,7 +68,6 @@ export const BUILTIN_MODEL_PROFILES: Readonly<Record<string, BuiltinModelProfile
   recommended: {
     displayName: "Recommended",
     description: "The best model you have connected, in OmO's recommended order.",
-    rankedProvidersOnly: true,
     models: [
       { providers: [...CLAUDE_PROVIDERS], model: "claude-opus-5-5", variant: "medium" },
       { providers: [...CLAUDE_PROVIDERS], model: "claude-fable-5-1", variant: "xhigh" },
@@ -100,7 +100,10 @@ export const BUILTIN_MODEL_PROFILES: Readonly<Record<string, BuiltinModelProfile
     tier: "normal",
     displayName: "Geeky · Normal",
     description: "Works on one task and thinks it through.",
-    models: [{ providers: [...GPT_PROVIDERS], model: "gpt-5.6-sol", variant: "medium" }],
+    models: [
+      { providers: [...GPT_6_1_PROVIDERS], model: "gpt-6.1-sol", variant: "medium" },
+      { providers: [...GPT_PROVIDERS], model: "gpt-5.6-sol", variant: "medium" },
+    ],
   },
   "geeky-heavy": {
     family: "geeky",
