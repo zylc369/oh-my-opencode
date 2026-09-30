@@ -1,9 +1,14 @@
 import { accessSync, constants, existsSync } from "node:fs"
-import { dirname, resolve } from "node:path"
+import { homedir } from "node:os"
+import { dirname, join, resolve } from "node:path"
 import { loadOmoConfig, type OmoConfigEnv } from "@oh-my-opencode/omo-config-core"
 import {
+  desktopEngineReleaseAssetName,
   getDesktopEngineHost,
+  getDesktopEngineCandidatePaths,
+  findCachedDesktopEngine,
   isQuarantinedFile,
+  launchDesktopEngine,
   locateDesktopEngine,
   type DesktopEngineLocateDiagnostic,
 } from "@oh-my-opencode/senpi-desktop-engine"
@@ -26,6 +31,8 @@ export type ComputerUseDoctorReport =
   | (ComputerUseDoctorBase & {
       readonly kind: "ready"
       readonly enginePath: string
+      readonly engineSource: string
+      readonly launchedEnginePath?: string
       readonly hello: {
         readonly protocolVersion: string
         readonly engineVersion: string
@@ -45,6 +52,7 @@ export type ComputerUseDoctorReport =
         readonly message: string
         readonly cause: string
         readonly attemptedPaths: readonly string[]
+        readonly reason?: "no-release-asset"
       }
     })
   | (ComputerUseDoctorBase & {
@@ -55,6 +63,8 @@ export type ComputerUseDoctorReport =
   | (ComputerUseDoctorBase & {
       readonly kind: "failed"
       readonly enginePath: string
+      readonly engineSource: string
+      readonly launchedEnginePath?: string
       readonly code: "abi-mismatch" | "handshake-failed" | "timeout"
       readonly message: string
     })
@@ -124,7 +134,7 @@ function resolveEnginePath(
   input: ComputerUseDoctorInput,
   enginePath: string | undefined,
 ):
-  | { readonly path: string }
+  | { readonly path: string; readonly source: string }
   | { readonly diagnostic: DesktopEngineLocateDiagnostic }
   | { readonly notInstalled: readonly string[] } {
   const platform = input.platform ?? process.platform
@@ -132,20 +142,30 @@ function resolveEnginePath(
   const host = getDesktopEngineHost(platform, arch)
   if (enginePath !== undefined) {
     const diagnostic = explicitPathDiagnostic(enginePath, host, platform)
-    return diagnostic === undefined ? { path: enginePath } : { diagnostic }
+    return diagnostic === undefined ? { path: enginePath, source: "explicit" } : { diagnostic }
   }
 
   const locatorOptions = {
     platform,
     arch,
-    runtimeDir: input.env.OMO_PACKAGE_DIR,
+    runtimeDir: input.env.OMO_PACKAGE_DIR ?? "",
     execDir: dirname(process.execPath),
     packageDir: resolve(input.packageRoot, "..", "senpi-desktop-engine"),
     repoRoot: resolve(input.packageRoot, "..", ".."),
   }
   const located = locateDesktopEngine(locatorOptions)
-  if (located.path !== null) return { path: located.path }
+  if (located.path !== null) {
+    const candidates = getDesktopEngineCandidatePaths(locatorOptions)
+    const sources = locatorOptions.runtimeDir ? ["runtime-dir", "sidecar", "package-prebuild", "dev-build"] : ["sidecar", "package-prebuild", "dev-build"]
+    return { path: located.path, source: sources[candidates.indexOf(located.path)] }
+  }
   if (located.diagnostic.code === "quarantined") return { diagnostic: located.diagnostic }
+  const cached = findCachedDesktopEngine({
+    version: input.version, host,
+    cacheDir: join(input.env.HOME ?? homedir(), ".omo", "cache", "senpi-desktop-engine"),
+  })
+  if (cached.path !== null) return { path: cached.path, source: "cache" }
+  if (desktopEngineReleaseAssetName(host) === null) return { diagnostic: located.diagnostic }
   return { notInstalled: located.diagnostic.attemptedPaths }
 }
 
@@ -163,19 +183,45 @@ export async function computerUseDoctorReport(input: ComputerUseDoctorInput): Pr
   const resolved = resolveEnginePath(input, settings.enginePath)
   if ("notInstalled" in resolved) return { ...base, kind: "not-installed", attemptedPaths: resolved.notInstalled }
   if ("diagnostic" in resolved) return unavailable(base, resolved.diagnostic)
-  const probed = await probeComputerUseEngine(
-    resolved.path,
+  const probe = (path: string) => ({ probe: probeComputerUseEngine(
+    path,
     input.env,
     input.timeoutMs ?? COMPUTER_USE_DOCTOR_TIMEOUT_MS,
     input.launchEngine,
-  )
+  ) })
+  const home = input.env.HOME ?? homedir()
+  const launched = settings.enginePath !== undefined && "path" in resolved
+    ? { path: resolved.path, value: probe(resolved.path) }
+    : await launchDesktopEngine({
+      version: input.version,
+      host,
+      allowDownload: false,
+      cacheDir: join(home, ".omo", "cache", "senpi-desktop-engine"),
+      installDir: join(home, ".omo", "engines", "senpi-desktop-engine"),
+      locatorOptions: {
+        platform, arch,
+        runtimeDir: input.env.OMO_PACKAGE_DIR ?? "",
+        execDir: dirname(process.execPath),
+        packageDir: resolve(input.packageRoot, "..", "senpi-desktop-engine"),
+        repoRoot: resolve(input.packageRoot, "..", ".."),
+      },
+    }, probe)
+  if (launched.path === null) {
+    return unavailable(base, launched.diagnostic)
+  }
+  const probed = await launched.value.probe
+  const location = {
+    enginePath: resolved.path,
+    engineSource: resolved.source,
+    ...(launched.path === resolved.path ? {} : { launchedEnginePath: launched.path }),
+  }
   if (!probed.ok) {
-    return { ...base, kind: "failed", enginePath: resolved.path, code: probed.code, message: probed.message }
+    return { ...base, ...location, kind: "failed", code: probed.code, message: probed.message }
   }
   return {
     ...base,
     kind: "ready",
-    enginePath: resolved.path,
+    ...location,
     hello: probed.value.hello,
     capabilities: probed.value.capabilities,
   }
