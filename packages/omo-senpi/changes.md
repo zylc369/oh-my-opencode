@@ -1,3 +1,45 @@
+## 2026-09-30 - claude-code: acquire before the auth check, from the provisioned runtime, with progress (#9276)
+
+- `src/components/claude-code/index.ts`: the component now also runs on `input`, which senpi's `prompt()` emits
+  before `checkAuth` (`emitInput`, then `checkAuth`, then `emitBeforeAgentStart`), so a prompt from a
+  `claude login`-only user downloads the executable before the ambient auth probe needs it. `before_agent_start` stays
+  for turns an extension starts (they skip `input`), registered `previewSafe` and skipping the prompt-cache preview.
+  The pin and cache root come from `claudeCodeRuntimeDir` (`OMO_PACKAGE_DIR`, else `dirname(execPath)`), since the
+  compiled launcher pins the provisioned runtime there while `execPath` can still be the downloaded binary.
+  A progress status (`omo-claude-code`: `Downloading Claude Code <version>: N% of M MB`, every 10%) shows while the
+  tarball streams (`acquire.ts` `onProgress`). New `applyCachedClaudeCode` lets the compiled launcher point the engine
+  at an already-downloaded copy before it starts.
+- Limit: on the launch that downloads, the startup ambient probe may already have cached "not signed in" for 30 s
+  (`availability.ts` `AMBIENT_STATUS_TTL_MS`); the next prompt after that window, and every later launch, resolve it.
+
+## 2026-09-30 - model-profile e2e: lane-beats-recommended-models proves a real recommended-models switch (#9238)
+
+- `scripts/qa/model-profile-e2e-scenarios.mjs`: `lane-beats-recommended-models` serves `mock-1`, `glm-5.3` and
+  `gpt-6-astra` on `chatgpt-subscription` + `opencode-go`, so no provider serves its engine provider default
+  (`gpt-6.1-sol`, `kimi-k3`). The session starts first-available on off-ladder `mock-1`, senpi's recommended-models
+  builtin switches to `chatgpt-subscription/gpt-6-astra`, and Daily · Normal still wins with `opencode-go/glm-5.3` max.
+  The old fixture's
+  only `gpt-6-sol` entry was the engine's initial provider-default record, which senpi#2393 moved to `gpt-6.1-sol`;
+  the builtin never switched there. `gpt-6-astra` keeps its ladder rung across senpi#2394's Sol-slot move.
+- `scripts/qa/model-profile-e2e.mjs`: that scenario's checks skip the initial-model record. `started_off_recommended_ladder`
+  requires the first `model_change` to be `mock-1`, and `recommended_models_switched_first` requires the builtin's
+  `chatgpt-subscription/gpt-6-astra` change to come after it and before the lane's `opencode-go/glm-5.3`.
+
+## 2026-09-30 - model-profile: Recommended leads its GPT-6 Sol slot with gpt-6.1-sol medium, gpt-6-sol behind it (senpi#2394)
+
+- `src/components/model-profile/builtin-profiles.ts`: `recommended` replaces its `gpt-6-sol` (medium) rung with
+  `gpt-6.1-sol` (medium) on `GPT_6_1_PROVIDERS` (`chatgpt-subscription|openai`), immediately followed by `gpt-6-sol`
+  (medium) on the shared `GPT_PROVIDERS` ranking, so Copilot and OpenCode Zen, which do not serve 6.1 Sol, still resolve
+  GPT-6 Sol. senpi#2394 makes the same switch in `RECOMMENDED_DEFAULT_MODELS`; OmO keeps the extra `gpt-6-sol` rung, and
+  the header comment says so. The lanes are unchanged. Telemetry already carries `gpt-6.1-sol` (#9214).
+- Tests: `builtin-profiles.test.ts` pins the seven-rung chain and the providers of both Sol rungs; `resolve.test.ts`
+  resolves `chatgpt-subscription/gpt-6.1-sol` medium when the subscription serves it next to `gpt-6-sol`, and
+  `github-copilot/gpt-6-sol` medium on a Copilot-only registry; `index.test.ts` applies both at session start.
+  `scripts/qa/model-profile-e2e-scenarios.mjs` adds `unset-gpt-6-1-sol` and `unset-copilot-gpt-6-sol`.
+- Docs: the Recommended ladder in `docs/guide/agent-model-matching.md`, `docs/guide/overview.md`,
+  `docs/guide/installation.md` and `docs/reference/omo-json.md`.
+- `plugin/extensions/` bundles regenerated on linux/amd64 (node 24, bun 1.4.2) for the chain change.
+
 ## 2026-09-30 - lsp: post-edit install nudges stay inside projects and appear once per server (#9223)
 
 - `components/lsp/post-edit-outcome.ts` (moved out of `index.ts`) turns a daemon `not_installed` availability into the structured post-edit outcome, carrying `serverId`, `installDecisionTool` and a recorded decision.
