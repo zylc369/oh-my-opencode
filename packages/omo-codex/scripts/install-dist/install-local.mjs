@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// omo-codex-install:99f7a7a838a0f4835d33136c2cd44294fc11198277b5cff65666fe2a1d368e34:2a28edcca9bbb32319f893df8e822db992610eaac6b4226395e9cb365da99eb3
+// omo-codex-install:b57cab987166cb32ccee2b1e270ba7ee7384ed161e57f6c7cbe1a7e1c89be996:83fa73a23480a883d76124477b21d074414efdbfd16ed33b9599e5b88bb92e4d
 var __esm = (fn, res, err) => () => {
   if (fn)
     try {
@@ -9984,7 +9984,7 @@ var package_default;
 var init_package = __esm(() => {
   package_default = {
     name: "@oh-my-opencode/omo-codex",
-    version: "5.1.6",
+    version: "5.1.8",
     type: "module",
     private: true,
     description: "Codex harness adapter for oh-my-openagent. Vendored Codex plugin namespace (omo) + TypeScript installer + telemetry.",
@@ -19449,7 +19449,8 @@ var OmoMemoryRecallSchema = object({
   event_caps: OmoMemoryRecallEventCapsSchema.default({ tool_args: 400, result_head: 600, assistant: 1500, prompt: 4000 }),
   sidecar_max_tokens: number2().int().positive().default(48000),
   max_concurrent_wakes: number2().int().positive().default(2),
-  tool_budget: number2().int().positive().default(8)
+  tool_budget: number2().int().positive().default(8),
+  query_expansion: boolean2().default(false)
 }).strict();
 var OmoMemoryNudgeSchema = object({
   enabled: boolean2().default(true),
@@ -19510,7 +19511,8 @@ var OmoMemoryRecallLayerSchema = object({
   event_caps: OmoMemoryRecallEventCapsLayerSchema.optional(),
   sidecar_max_tokens: number2().int().positive().optional(),
   max_concurrent_wakes: number2().int().positive().optional(),
-  tool_budget: number2().int().positive().optional()
+  tool_budget: number2().int().positive().optional(),
+  query_expansion: boolean2().optional()
 }).strict();
 var OmoMemoryNudgeLayerSchema = object({
   enabled: boolean2().optional(),
@@ -19587,7 +19589,8 @@ var OmoMemorySettingsSchema = object({
     event_caps: { tool_args: 400, result_head: 600, assistant: 1500, prompt: 4000 },
     sidecar_max_tokens: 48000,
     max_concurrent_wakes: 2,
-    tool_budget: 8
+    tool_budget: 8,
+    query_expansion: false
   }),
   compile_warn_tokens: number2().int().positive().default(30000),
   agents: record(string2(), OmoMemoryAgentOverridesSchema).default({})
@@ -19846,11 +19849,15 @@ var OmoFormatOnMutationSchema = OmoFormatOnMutationLayerSchema.extend({
   timeoutMs: number2().int().positive().default(3000)
 }).strict();
 
+// packages/omo-config-core/src/schema/gateway.ts
+var OmoGatewaySectionSchema = record(string2(), unknown()).describe("Chat-surface gateway settings, owned and validated by a separately installed gateway package. omo accepts the key and never reads it.");
+
 // packages/omo-config-core/src/schema/config.ts
 var OmoOpenCodeHarnessConfigSchema = record(string2(), unknown());
 var OmoDisabledSkillsSchema = array(string2());
 var OmoTypedHarnessConfigSchema = object({
   formatOnMutation: OmoFormatOnMutationLayerSchema.optional(),
+  gateway: OmoGatewaySectionSchema.optional(),
   categories: OmoCategoriesConfigSchema.optional(),
   agents: OmoAgentsConfigSchema.optional(),
   git_master: OmoGitMasterSettingsLayerSchema.optional(),
@@ -19885,6 +19892,7 @@ var OmoConfigProfileSchema = object({
 }).strict();
 var OmoConfigSchema = object({
   formatOnMutation: OmoFormatOnMutationSchema.optional(),
+  gateway: OmoGatewaySectionSchema.optional(),
   $schema: string2().optional(),
   categories: OmoCategoriesConfigSchema.optional(),
   agents: OmoAgentsConfigSchema.optional(),
@@ -19908,6 +19916,7 @@ var OmoConfigSchema = object({
 }).strict();
 var OmoConfigLayerSchema = object({
   formatOnMutation: OmoFormatOnMutationLayerSchema.optional(),
+  gateway: OmoGatewaySectionSchema.optional(),
   $schema: string2().optional(),
   categories: OmoCategoriesConfigSchema.optional(),
   agents: OmoAgentsConfigSchema.optional(),

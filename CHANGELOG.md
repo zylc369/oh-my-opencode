@@ -7,6 +7,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.1.8] - 2026-10-01
+
+**A packaged install runs Bun itself again when you call `bun` from an eval cell or the bash tool.** Before, it started a second agent and handed back that agent's reply as a passing result. Geeky · Heavy and `deep-high` move to GPT-6 Astra at high, Geeky · Normal to GPT-6.1 Sol Fast at medium, a session opened from the desktop app keeps the permission mode it asked for, and memory recall now matches Chinese and Japanese characters one by one. This release runs on the senpi 2026.10.1-2 engine.
+
+### Added
+
+A session opened from the desktop app or another multi-session client runs with the permission mode it asked for (full access, accept edits or ask first). Before, the mode was recorded but every session ran with the host default. ([senpi#2461](https://github.com/code-yeongyu/senpi/issues/2461))
+
+`web_search` has two hosted routes: a ChatGPT subscription session searches through the subscription's own web search with your ChatGPT login, and Google Search grounding is available as an opt-in entry in `websearch.json`. ([senpi#2341](https://github.com/code-yeongyu/senpi/issues/2341))
+
+Ultrafast can be selected explicitly with a model decorator such as `chatgpt-subscription/gpt-6-astra:xhigh:ultrafast`, in `models.json` or per session. Thanks to @audreyt. ([senpi#2412](https://github.com/code-yeongyu/senpi/issues/2412))
+
+Memory recall also matches Chinese characters and Japanese kanji one by one, so a question worded differently from the note can still find it; a question without any such character gets the same candidates as before. Thanks to [@ashmoonori-afk](https://github.com/ashmoonori-afk). ([#9341](https://github.com/code-yeongyu/oh-my-openagent/pull/9341))
+
+Memory recall can widen its own searches with synonyms, keywords in your other languages and related terms when you set `memory.recall.query_expansion` to `true`; an added term counts for less than the same match on one of the query's own words, a note that holds every word of the query stays first, and with the setting off, the default, nothing changes. Thanks to [@ashmoonori-afk](https://github.com/ashmoonori-afk). ([#9342](https://github.com/code-yeongyu/oh-my-openagent/pull/9342))
+
+### Changed
+
+Geeky · Heavy and the `deep-high` category now run GPT-6 Astra at high reasoning instead of xhigh. Geeky · Normal now starts on GPT-6.1 Sol Fast at medium; without the Fast tier it uses plain GPT-6.1 Sol at medium, and Copilot or OpenCode users still get GPT-5.6 Sol at medium. `deep-low` keeps GPT-6.1 Sol at medium. ([#9372](https://github.com/code-yeongyu/oh-my-openagent/issues/9372))
+
+When a delegated task stops because its model hit a usage limit, the result now says so, says when no other model in the category's chain could take over (as on `deep-high`, which runs GPT-6 Astra only), and how to recover, instead of ending on the provider's raw error. ([#9372](https://github.com/code-yeongyu/oh-my-openagent/issues/9372))
+
+### Fixed
+
+**Hotfix: `eval` and `bash` calls that run `bun` no longer start a phantom agent turn in the packaged engine.** In a compiled engine, a `bun` subprocess ran the engine itself as a second agent instead of the requested script. ([#9362](https://github.com/code-yeongyu/oh-my-openagent/issues/9362), [senpi#2494](https://github.com/code-yeongyu/senpi/pull/2494))
+
+Manual `/compact` on a Claude subscription replaces the resident Claude transcript with the compacted summary, so the next request really uses the smaller context. Thanks to @ayalcoh for the fix and @Tinycute00 for the report. ([senpi#2331](https://github.com/code-yeongyu/senpi/issues/2331))
+
+With two or more logins for one provider, a usage limit reported only in words switches the request to the next account instead of failing it. Thanks to @orientpine. ([senpi#1768](https://github.com/code-yeongyu/senpi/issues/1768))
+
+Package installs and updates no longer flash a console window on Windows. Thanks to @willowite. ([senpi#2450](https://github.com/code-yeongyu/senpi/issues/2450))
+
+Standalone release binaries now run JavaScript, Python, a real file read and cell listing on all nine natively executable targets, including Alpine musl. Seven legs run that smoke before their binary is uploaded; the linux-arm64 and linux-arm64-musl smokes run after the build, in parallel with the npm platform publish, and a failure there fails the platform release workflow's result. All twelve target manifests preserve the same derived codemode sidecars, and required wasm assets fail packaging if missing. ([#9291](https://github.com/code-yeongyu/oh-my-openagent/issues/9291))
+
+Piping the recommended installer to `sh` or `dash` now hands the script to Bash instead of failing on Bash syntax. If Bash is unavailable, the installer prints the exact `curl ... | bash` command to use and exits cleanly. ([#9325](https://github.com/code-yeongyu/oh-my-openagent/issues/9325))
+
+## [5.1.7] - 2026-09-30
+
+**Computer use on macOS says what it needs and where its engine comes from.** A downloaded install trusts the engine shipped inside its own app, a missing Screen Recording or Accessibility grant opens the right System Settings pane, and `/computer status` and `omo doctor` show which engine you have before it starts. This release runs on the senpi 2026.9.30 engine, like 5.1.6.
+
+### Added
+
+`/computer status` and `omo doctor` report where the computer-use engine is and where it came from (the app bundle, the cache or a path you set) without starting it, name hosts it does not support, and give the same answer. `omo doctor` never downloads the engine. ([#9286](https://github.com/code-yeongyu/oh-my-openagent/issues/9286), [#9311](https://github.com/code-yeongyu/oh-my-openagent/pull/9311))
+
+### Changed
+
+Test cleanups from an internal audit, with no change to behavior. ([#9302](https://github.com/code-yeongyu/oh-my-openagent/pull/9302), [#9304](https://github.com/code-yeongyu/oh-my-openagent/pull/9304), [#9310](https://github.com/code-yeongyu/oh-my-openagent/pull/9310), [#9312](https://github.com/code-yeongyu/oh-my-openagent/pull/9312), [#9314](https://github.com/code-yeongyu/oh-my-openagent/pull/9314), [#9315](https://github.com/code-yeongyu/oh-my-openagent/pull/9315), [#9316](https://github.com/code-yeongyu/oh-my-openagent/pull/9316), [#9317](https://github.com/code-yeongyu/oh-my-openagent/pull/9317), [#9318](https://github.com/code-yeongyu/oh-my-openagent/pull/9318), [#9319](https://github.com/code-yeongyu/oh-my-openagent/pull/9319), [#9321](https://github.com/code-yeongyu/oh-my-openagent/pull/9321))
+
+### Fixed
+
+On macOS, an install downloaded from the web trusts the computer-use engine shipped inside its own app when the engine sits inside the install and matches the checksums shipped beside it. Before, the download quarantine made that engine look untrusted. Any other quarantined engine is still refused. ([#9283](https://github.com/code-yeongyu/oh-my-openagent/issues/9283), [#9301](https://github.com/code-yeongyu/oh-my-openagent/pull/9301))
+
+When computer use is missing the Screen Recording or Accessibility grant, it opens that System Settings pane once, names the app to enable, and tells you to quit and relaunch it. A denied Accessibility listener now reads as a permission problem instead of "supervisor not live". ([#9284](https://github.com/code-yeongyu/oh-my-openagent/issues/9284), [#9309](https://github.com/code-yeongyu/oh-my-openagent/pull/9309))
+
+On Windows set to a language other than English, unpacking a download no longer fails when `tar` lists month names outside ASCII. Thanks to @willowite for the report, the reproduction and the fix. ([#9289](https://github.com/code-yeongyu/oh-my-openagent/issues/9289), [#9303](https://github.com/code-yeongyu/oh-my-openagent/pull/9303))
+
+Editing a file with no extension, such as a shebang script or a `Makefile`, no longer returns "LSP errors detected ... please fix" when no language server covers it. Thanks to @MoerAI for the fix and @floweredao for the report. ([#9292](https://github.com/code-yeongyu/oh-my-openagent/issues/9292), [#9296](https://github.com/code-yeongyu/oh-my-openagent/pull/9296))
+
+Your home folder no longer counts as a project by itself, so a dotfiles `.git` or a stray `~/package.json` stops the language-server install prompt from firing for every file in it. A project with its own marker inside your home folder still counts. Thanks to @MoerAI. ([#9227](https://github.com/code-yeongyu/oh-my-openagent/issues/9227), [#9297](https://github.com/code-yeongyu/oh-my-openagent/pull/9297))
+
+On OpenCode, picking a non-GPT model for Hephaestus fails with an error saying Hephaestus needs a GPT model, instead of an opaque `UnknownError`. Thanks to @RaviTharuma. ([#7704](https://github.com/code-yeongyu/oh-my-openagent/issues/7704), [#7707](https://github.com/code-yeongyu/oh-my-openagent/pull/7707))
+
+On OpenCode, `opencode run --agent sisyphus` and the other original config keys pick that agent again after display names are applied. A category or an unknown name passed to `--agent` fails with a clear error instead of quietly running the default agent. Thanks to @RaviTharuma. ([#7701](https://github.com/code-yeongyu/oh-my-openagent/issues/7701), [#7703](https://github.com/code-yeongyu/oh-my-openagent/issues/7703), [#7708](https://github.com/code-yeongyu/oh-my-openagent/pull/7708))
+
+On OpenCode, ordinary chat no longer turns into a goal, and a message containing pause, resume or clear leaves your goal alone. A prompt longer than 2,000 characters no longer fails with `InvalidObjectiveError`. Goals change only through an explicit `/goal` command, or from your first message when `default_mode.goal` is on. Thanks to @RaviTharuma for the fix and @Cle2ment for the report. ([#6391](https://github.com/code-yeongyu/oh-my-openagent/issues/6391), [#7979](https://github.com/code-yeongyu/oh-my-openagent/pull/7979))
+
+On Codex, updating removes the retired `features.child_agents_md` setting that Codex 0.156 rejects at startup, and the bundled rules no longer mention it. Thanks to @LilMGenius. ([#8693](https://github.com/code-yeongyu/oh-my-openagent/pull/8693))
+
+On Codex, the spawn examples in the bundled Hephaestus rule name their `agent_type`, so a session that follows them spawns its subagents instead of being blocked by the spawn guard. Thanks to @LilMGenius. ([#8298](https://github.com/code-yeongyu/oh-my-openagent/pull/8298))
+
 ## [5.1.6] - 2026-09-30
 
 **Hotfix: reopening a session with an unanswerable question no longer crashes the TUI.** ([#9268](https://github.com/code-yeongyu/oh-my-openagent/issues/9268)) When a session was resumed with a pending question whose saved arguments no longer formed a valid question set, the question widget showed "0 unanswered" and crashed with `Cannot read properties of undefined (reading 'question')` as soon as you expanded it. The call now settles as lost in a restart, so the model learns the question is gone and can ask again, and clicking a widget whose questions all have answers submits them. Thanks to @copycatcode for the report. This release runs on the senpi 2026.9.30 engine.
@@ -18,6 +88,8 @@ A new `accept-edits` permission preset lets the agent read and edit files in the
 Chat bridges can ask the engine for a chat prompt surface, which drops the routing line, the handoff block and todo lines from replies meant for people in a conversation. Terminal and app prompts stay as they are. ([senpi#2398](https://github.com/code-yeongyu/senpi/issues/2398))
 
 ### Changed
+
+The recommended `curl` installer now offers `Remove the other omo install at <path>? [y/N]` when it verifies a second installation. Non-interactive runs keep both unless `--remove-other-installs` is explicit, and `omo doctor` prints the exact Bun, npm, or standalone removal command for the non-active install. ([#9324](https://github.com/code-yeongyu/oh-my-openagent/issues/9324))
 
 The engine's recommended OpenAI model is GPT-6.1 Sol at medium, one slot below GPT-6 Astra. Models you listed yourself in `recommendedModels` stay as you set them. ([senpi#2390](https://github.com/code-yeongyu/senpi/issues/2390))
 
